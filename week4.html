@@ -17,11 +17,11 @@
 <h2 style="text-align: center;">时区边界可视化</h2>
 <div id="map"></div>
 
-<!-- 引入 Leaflet JS -->
+<!-- Import Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    // const initialCenter = [40.82, -96.70];  // 初始中心点
-    const bounds = L.latLngBounds([-90, -180], [90, 180]);  // 限制世界范围
+    // const initialCenter = [40.82, -96.70];  // Map center UNL City Campus
+    const bounds = L.latLngBounds([-90, -180], [90, 180]);  // Restrict world, cannot drag unlimited
 
     const map = L.map('map', {
         worldCopyJump: false,
@@ -30,41 +30,46 @@
         minZoom: 2
     });
 
-    // 添加 OpenStreetMap 底图图层
+    // Load OpenStreetMap base map
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
 
-    // 加载并显示时区数据
-    fetch('data/timezones_wVVG8.geojson') // https://github.com/treyerl/timezones/tree/master
+    // Load time zone geojson file
+    fetch('data/timezones_wVVG8.geojson') // From: https://github.com/treyerl/timezones/tree/master
         .then(response => response.json())
         .then(data => {
             // 创建时区图层
             const timezoneLayer = L.geoJSON(data, {
                 style: {
-                    color: "#555",      // 边界线颜色
-                    weight: 1,         // 线宽
-                    fillColor: "#89CFF0", // 填充颜色
-                    fillOpacity: 0.2    // 填充透明度
+                    color: "black",      // Edge color
+                    weight: 1,         // Edge width
+                    fillColor: "transparent", // Fill color
+                    fillOpacity: 0    // Fill opacity
                 },
                 onEachFeature: function(feature, layer) {
-                    // 添加鼠标交互
+                    // Add mouse interaction
                     layer.on({
-                        mouseover: function(e) {
+                        mouseover: function(e) { // Mouse hover turn red
                             layer.setStyle({
                                 weight: 2,
-                                color: "#FF4500"
+                                color: "red",
+                                fillColor: "red",
+                                fillOpacity: 0.2
                             });
+                            layer.bringToFront(); // Make current time zone on top
                         },
-                        mouseout: function(e) {
+                        mouseout: function(e) { // Mouse leave turn black
                             layer.setStyle({
                                 weight: 1,
-                                color: "#555"
+                                color: "black",
+                                fillColor: "transparent",
+                                fillOpacity: 0
                             });
                         }
                     });
 
-                    // 添加点击弹出信息
+                    // Pop up bubble
                     if (feature.properties) {
                         const popupContent = `
                             <div class="info">
@@ -76,7 +81,7 @@
                 }
             }).addTo(map);
 
-            // 自动缩放到时区数据范围（可选）
+            // Auto zoom to data boundary
             map.fitBounds(timezoneLayer.getBounds());
         })
         .catch(error => {
