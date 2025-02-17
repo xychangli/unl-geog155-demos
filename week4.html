@@ -6,17 +6,56 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         #map {
-            height: 900px;
+            height: 600px;
             margin: 20px;
             border: 2px solid #ddd;
+        }
+        #search-container {
+            text-align: center;
+            margin: 20px;
+        }
+        #search-box {
+            width: 300px;
+            padding: 5px;
+            font-size: 16px;
+        }
+        #search-button {
+            padding: 6px 10px;
+            font-size: 16px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
 
-<h2 style="text-align: center;">时区边界可视化</h2>
-<div id="map"></div>
+<!-- Show local time and UTC time -->
+<div style="padding: 20px; background: #f0f0f0;">
+    Local time: <span id="localTime"></span><br>
+    UTC time: <span id="utcTime"></span>
+</div>
 
+<!-- Time update logic -->
+<script>
+    function updateTime() {
+        const now = new Date();
+        document.getElementById('utcTime').textContent = now.toUTCString();
+        document.getElementById('localTime').textContent = now.toLocaleString();
+    }
+    setInterval(updateTime, 1000); // Update every 1 second
+    updateTime(); // Initial display
+</script>
+
+<h2 style="text-align: center;">GEOG 155 Lab 4 Time Zone Demo</h2>
+<p style="text-align: center;">Author: Chang Li</p>
+
+<!-- Search box -->
+<div id="search-container">
+    <input type="text" id="search-box" placeholder="Enter a location">
+    <button id="search-button">Search</button>
+</div>
+
+<!-- The map -->
+<div id="map"></div>
 <!-- Import Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -34,6 +73,8 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
+
+    let marker;
 
     // Load time zone geojson file
     fetch('data/timezones_wVVG8.geojson') // From: https://github.com/treyerl/timezones/tree/master
@@ -85,9 +126,52 @@
             map.fitBounds(timezoneLayer.getBounds());
         })
         .catch(error => {
-            console.error('加载时区数据失败:', error);
-            alert('无法加载时区数据，请检查控制台错误信息');
+            console.error('Failed to load time zone data:', error);
+            alert('Cannot load time zone data. Check console for errors.');
         });
+
+    // Search for location
+    document.getElementById('search-button').addEventListener('click', function() {
+        const location = document.getElementById('search-box').value.trim();
+        if (!location) return alert("Please enter a location.");
+
+        // Free geocoding API?
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}`, {
+            headers: { 'User-Agent': 'GEOG155-TimeZone-Demo' } // Required to avoid blocking
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.length === 0) {
+                    alert("Location not found.");
+                    return;
+                }
+
+                const lat = parseFloat(data[0].lat);
+                const lon = parseFloat(data[0].lon);
+                const displayName = data[0].display_name; // Full location name
+                const latLng = [lat, lon];
+
+                if (marker) map.removeLayer(marker);
+                marker = L.marker(latLng).addTo(map);
+                map.setView(latLng, 2);
+
+                // Use Nominatim for reverse geocoding to get time zone
+                fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`, {
+                    headers: { 'User-Agent': 'GEOG155-TimeZone-Demo' }
+                })
+                    .then(response => response.json())
+                    .then(reverseData => {
+                        let timezone = reverseData.address.timezone || "Unknown time zone";
+                        marker.bindPopup(`Location: ${displayName}<br>Time Zone: <b>${timezone}</b>`).openPopup();
+                    })
+                    .catch(() => {
+                        marker.bindPopup(`Location: ${displayName}<br>Time Zone: <b>Unknown</b>`).openPopup();
+                    });
+
+            })
+            .catch(() => alert("Error fetching location data. Try again later."));
+    });
+
 </script>
 
 </body>
