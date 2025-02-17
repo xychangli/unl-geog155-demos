@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Week 4 Time Zone Demo</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map {
+            height: 900px;
+            margin: 20px;
+            border: 2px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+
+<h2 style="text-align: center;">时区边界可视化</h2>
+<div id="map"></div>
+
+<!-- 引入 Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // const initialCenter = [40.82, -96.70];  // 初始中心点
+    const bounds = L.latLngBounds([-90, -180], [90, 180]);  // 限制世界范围
+
+    const map = L.map('map', {
+        worldCopyJump: false,
+        maxBounds: bounds,
+        maxBoundsViscosity: 0.9,
+        minZoom: 2
+    });
+
+    // 添加 OpenStreetMap 底图图层
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    // 加载并显示时区数据
+    fetch('data/timezones_wVVG8.geojson') // https://github.com/treyerl/timezones/tree/master
+        .then(response => response.json())
+        .then(data => {
+            // 创建时区图层
+            const timezoneLayer = L.geoJSON(data, {
+                style: {
+                    color: "#555",      // 边界线颜色
+                    weight: 1,         // 线宽
+                    fillColor: "#89CFF0", // 填充颜色
+                    fillOpacity: 0.2    // 填充透明度
+                },
+                onEachFeature: function(feature, layer) {
+                    // 添加鼠标交互
+                    layer.on({
+                        mouseover: function(e) {
+                            layer.setStyle({
+                                weight: 2,
+                                color: "#FF4500"
+                            });
+                        },
+                        mouseout: function(e) {
+                            layer.setStyle({
+                                weight: 1,
+                                color: "#555"
+                            });
+                        }
+                    });
+
+                    // 添加点击弹出信息
+                    if (feature.properties) {
+                        const popupContent = `
+                            <div class="info">
+                                Time Zone: <b>UTC${feature.properties.name || 'Unknown time zone'}</b><br>
+                            </div>
+                        `;
+                        layer.bindPopup(popupContent);
+                    }
+                }
+            }).addTo(map);
+
+            // 自动缩放到时区数据范围（可选）
+            map.fitBounds(timezoneLayer.getBounds());
+        })
+        .catch(error => {
+            console.error('加载时区数据失败:', error);
+            alert('无法加载时区数据，请检查控制台错误信息');
+        });
+</script>
+
+</body>
+</html>
