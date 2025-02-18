@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="image/Nebraska_N_RGB.png" type="image/png">
+    <title>GEOG 155 Lab 3 GIS and VGI Demo</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map {
+            height: 600px;
+            margin: 20px;
+            border: 2px solid #ddd;
+        }
+        #search-container {
+            text-align: center;
+            margin: 20px;
+        }
+        #search-box {
+            width: 300px;
+            padding: 5px;
+            font-size: 16px;
+        }
+        #search-button {
+            padding: 6px 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #logo-container {
+            position: absolute; /* Absolute positioning */
+            top: 20px;        /* 10px from the top */
+            left: 30px;       /* 10px from the left */
+            z-index: 1000;    /* Ensure it's above other elements (like the map) */
+        }
+        #logo-container img {
+            max-width: 120px; /* Limit logo width */
+            height: auto; /* Maintain aspect ratio */
+            display: block; /* Remove any potential extra spacing below the image */
+        }
+    </style>
+    <meta name="author" content="Chang Li 李畅">
+    <meta name="date" content="2025-02-18">
+    <meta name="description" content="Interactive map to display Volunteered Geographic Information.">
+</head>
+<body>
+
+<!-- UNL logo -->
+<div id="logo-container">
+    <img src="image/R_Nebraska_N_2023_name_RGB.png" alt="University of Nebraska-Lincoln">
+</div>
+
+<h2 style="text-align: center;">GEOG 155 Lab 3 GIS and VGI Demo</h2>
+<p style="text-align: center;">Author: Chang Li</p>
+
+<!-- The map -->
+<div id="map"></div>
+<!-- Import Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const initialCenter = [40.82, -96.70];  // Map center UNL City Campus
+    const bounds = L.latLngBounds([-90, -180], [90, 180]);  // Restrict world, cannot drag unlimited
+
+    const map = L.map('map', {
+        worldCopyJump: false,
+        maxBounds: bounds,
+        maxBoundsViscosity: 0.9,
+        minZoom: 2
+    }).setView(initialCenter, 4); // Set initial center and zoom level
+
+    // Load OpenStreetMap base map
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+</script>
+
+</body>
+</html>
