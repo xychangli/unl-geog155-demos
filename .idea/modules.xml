@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/geog155-week4-timezone.iml" filepath="$PROJECT_DIR$/.idea/geog155-week4-timezone.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/unl-geog155-demos.iml" filepath="$PROJECT_DIR$/.idea/unl-geog155-demos.iml" />
     </modules>
   </component>
 </project>
