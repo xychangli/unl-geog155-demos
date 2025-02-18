@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Week 4 Time Zone Demo</title>
+    <link rel="icon" href="image/Nebraska_N_RGB.png" type="image/png">
+    <title>GEOG 155 Week 4 Time Zone Demo</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Turf.js for spatial analysis -->
     <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
@@ -26,6 +27,17 @@
             font-size: 16px;
             cursor: pointer;
         }
+        #logo-container {
+            position: absolute; /* Absolute positioning */
+            top: 120px;        /* 10px from the top */
+            left: 30px;       /* 10px from the left */
+            z-index: 1000;    /* Ensure it's above other elements (like the map) */
+        }
+        #logo-container img {
+            max-width: 120px; /* Limit logo width */
+            height: auto; /* Maintain aspect ratio */
+            display: block; /* Remove any potential extra spacing below the image */
+        }
     </style>
     <meta name="author" content="Chang Li 李畅">
     <meta name="date" content="2025-02-17">
@@ -37,6 +49,11 @@
 <div style="padding: 20px; background: #f0f0f0;">
     Local time: <span id="localTime"></span><br>
     UTC time: <span id="utcTime"></span>
+</div>
+
+<!-- UNL logo -->
+<div id="logo-container">
+    <img src="image/R_Nebraska_N_2023_name_RGB.png" alt="University of Nebraska-Lincoln">
 </div>
 
 <!-- Time update logic -->
