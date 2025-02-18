@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <title>Week 4 Time Zone Demo</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Turf.js for spatial analysis -->
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
     <style>
         #map {
             height: 600px;
@@ -25,6 +27,9 @@
             cursor: pointer;
         }
     </style>
+    <meta name="author" content="Chang Li 李畅">
+    <meta name="date" content="2025-02-17">
+    <meta name="description" content="Interactive map to show time zone for a given location.">
 </head>
 <body>
 
@@ -74,14 +79,46 @@
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
 
-    let marker;
+    let marker; // Store the marker
+    let timezoneLayer // Store the time zone layer
+    let timezoneData = null; // Store the time zone GeoJSON data
 
-    // Load time zone geojson file
-    fetch('data/timezones_wVVG8.geojson') // From: https://github.com/treyerl/timezones/tree/master
+    // Function to determine the time zone (CORRECTED)
+    function getTimeZone(lat, lng) {
+        if (!timezoneData) return "Unknown time zone";
+
+        const point = turf.point([lng, lat]); // [longitude, latitude]
+        let foundZone = "Unknown time zone";
+
+        for (let i = 0; i < timezoneData.features.length; i++) {
+            const feature = timezoneData.features[i];
+
+            // Check if the geometry is *not* a Polygon or MultiPolygon
+            if (feature.geometry?.type !== 'Polygon' && feature.geometry?.type !== 'MultiPolygon') {
+                console.log(`Skipping feature index ${i} due to unsupported geometry type: ${feature.geometry?.type}`);
+                continue; // Skip to the next feature
+            }
+
+            if (turf.booleanPointInPolygon(point, feature)) {
+                foundZone = feature.properties.name || "Unknown time zone";
+                console.log(`Found match in feature index ${i}! Time zone: ${foundZone}`);
+                break;
+            } else {
+                console.log(`No match in feature index ${i}`);
+            }
+        }
+
+        console.log(`Final result: Time zone - ${foundZone}`);
+        return foundZone;
+    }
+
+    // Load time zone GeoJSON file
+    fetch('data/timezones_wVVG8.geojson') // From https://github.com/treyerl/timezones/tree/master
         .then(response => response.json())
         .then(data => {
+            timezoneData = data;
             // 创建时区图层
-            const timezoneLayer = L.geoJSON(data, {
+            timezoneLayer = L.geoJSON(timezoneData, {
                 style: {
                     color: "black",      // Edge color
                     weight: 1,         // Edge width
@@ -112,22 +149,18 @@
 
                     // Pop up bubble
                     if (feature.properties) {
-                        const popupContent = `
-                            <div class="info">
-                                Time Zone: <b>UTC${feature.properties.name || 'Unknown time zone'}</b><br>
-                            </div>
-                        `;
-                        layer.bindPopup(popupContent);
+                        layer.bindPopup(`Time Zone: <b>UTC${feature.properties.name || 'Unknown time zone'}</b>`);
                     }
                 }
             }).addTo(map);
 
             // Auto zoom to data boundary
             map.fitBounds(timezoneLayer.getBounds());
+            document.getElementById('search-button').disabled = false; // Enable the search button after data is loaded
         })
         .catch(error => {
             console.error('Failed to load time zone data:', error);
-            alert('Cannot load time zone data. Check console for errors.');
+            alert('Cannot load time zone data. ');
         });
 
     // Search for location
@@ -135,7 +168,7 @@
         const location = document.getElementById('search-box').value.trim();
         if (!location) return alert("Please enter a location.");
 
-        // Free geocoding API?
+        // Free geocoding API? https://nominatim.org/
         fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}`, {
             headers: { 'User-Agent': 'GEOG155-TimeZone-Demo' } // Required to avoid blocking
         })
@@ -151,25 +184,19 @@
                 const displayName = data[0].display_name; // Full location name
                 const latLng = [lat, lon];
 
-                if (marker) map.removeLayer(marker);
+                console.log(`Searched Location: ${location}, Latitude: ${lat}, Longitude: ${lon}`); // Log coordinates
+
+                if (marker) map.removeLayer(marker); // Remove existing marker then place new one
                 marker = L.marker(latLng).addTo(map);
-                map.setView(latLng, 2);
+                map.setView(latLng, 4);
 
-                // Use Nominatim for reverse geocoding to get time zone
-                fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`, {
-                    headers: { 'User-Agent': 'GEOG155-TimeZone-Demo' }
-                })
-                    .then(response => response.json())
-                    .then(reverseData => {
-                        let timezone = reverseData.address.timezone || "Unknown time zone";
-                        marker.bindPopup(`Location: ${displayName}<br>Time Zone: <b>${timezone}</b>`).openPopup();
-                    })
-                    .catch(() => {
-                        marker.bindPopup(`Location: ${displayName}<br>Time Zone: <b>Unknown</b>`).openPopup();
-                    });
-
+                let timezone = getTimeZone(lat, lon);
+                marker.bindPopup(`
+                    Location: <b>${displayName}</b><br>
+                    Time Zone: <b>GMT${timezone}</b>
+                `).openPopup();
             })
-            .catch(() => alert("Error fetching location data. Try again later."));
+            .catch(() => alert("Error fetching location data."));
     });
 
 </script>
