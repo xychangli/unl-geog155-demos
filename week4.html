@@ -166,7 +166,7 @@
 
                     // Pop up bubble
                     if (feature.properties) {
-                        layer.bindPopup(`Time Zone: <b>UTC${feature.properties.name || 'Unknown time zone'}</b>`);
+                        layer.bindPopup(`Time Zone: <b>GMT${feature.properties.name || 'Unknown time zone'}</b>`);
                     }
                 }
             }).addTo(map);
@@ -214,6 +214,13 @@
                 `).openPopup();
             })
             .catch(() => alert("Error fetching location data."));
+    });
+
+    // Add keydown event to the search box for Enter key search
+    document.getElementById('search-box').addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            document.getElementById('search-button').click(); // Trigger button click on Enter key
+        }
     });
 
 </script>
