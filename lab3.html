@@ -14,7 +14,7 @@
         }
         #logo-container {
             position: absolute; /* Absolute positioning */
-            top: 20px;        /* 10px from the top */
+            top: 120px;        /* 10px from the top */
             left: 30px;       /* 10px from the left */
             z-index: 1000;    /* Ensure it's above other elements (like the map) */
         }
@@ -38,12 +38,16 @@
 <h2 style="text-align: center;">GEOG 155 Lab 3 GIS and VGI Demo</h2>
 <p style="text-align: center;">Author: Chang Li</p>
 <p style="text-align: center;">
-    Go to <a href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">
-    https://arcg.is/1WSeza</a> to participate in the activity.<br>
-    After submitting the survey, refresh this webpage.<br>
-    Take a screenshot of your POI with the popup showing your name, rating, and review.<br>
-    Submit the screenshot to Canvas.
+    <span style="display: inline-block; text-align: left;">
+        Go to <a href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">
+        https://arcg.is/1WSeza</a> to participate in the activity.<br>
+        After submitting the survey, refresh this webpage.<br>
+        Take a screenshot of your POI with the popup showing<br>
+        your name, section, rating, and review.<br>
+        Submit the screenshot to Canvas.
+    </span>
 </p>
+
 
 <!-- The map -->
 <div id="map"></div>
@@ -69,7 +73,7 @@
     async function fetchSurveyData() {
         // Survey results, ArcGIS Online feature layer URL
         const featureLayerUrl = "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/survey123_e28761d4a7bc44d98d45bf4925cc7238_results/FeatureServer/0";
-        const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=student_name,poi_rating,poi_review&f=json`;
+        const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=student_name,student_section,poi_rating,poi_review&f=json`;
 
         try {
             const response = await fetch(queryUrl);
@@ -92,6 +96,7 @@
                 // Create popup content
                 const popupContent = `
                     <b>Student Name:</b> ${attributes.student_name || 'N/A'}<br>
+                    <b>Lab Section:</b> ${attributes.student_section || 'N/A'}<br>
                     <b>Rating:</b> ${attributes.poi_rating || 'N/A'}<br>
                     <b>Review:</b> ${attributes.poi_review || 'N/A'}
                 `;
