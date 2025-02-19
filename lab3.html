@@ -8,23 +8,9 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         #map {
-            height: 600px;
+            height: 800px;
             margin: 20px;
-            border: 2px solid #ddd;
-        }
-        #search-container {
-            text-align: center;
-            margin: 20px;
-        }
-        #search-box {
-            width: 300px;
-            padding: 5px;
-            font-size: 16px;
-        }
-        #search-button {
-            padding: 6px 10px;
-            font-size: 16px;
-            cursor: pointer;
+            border: 2px solid white;
         }
         #logo-container {
             position: absolute; /* Absolute positioning */
@@ -51,6 +37,13 @@
 
 <h2 style="text-align: center;">GEOG 155 Lab 3 GIS and VGI Demo</h2>
 <p style="text-align: center;">Author: Chang Li</p>
+<p style="text-align: center;">
+    Go to <a href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">
+    https://arcg.is/1WSeza</a> to participate in the activity.<br>
+    After submitting the survey, refresh this webpage.<br>
+    Take a screenshot of your POI with the popup showing your name, rating, and review.<br>
+    Submit the screenshot to Canvas.
+</p>
 
 <!-- The map -->
 <div id="map"></div>
@@ -65,12 +58,54 @@
         maxBounds: bounds,
         maxBoundsViscosity: 0.9,
         minZoom: 2
-    }).setView(initialCenter, 4); // Set initial center and zoom level
+    }).setView(initialCenter, 12); // Set initial center and zoom level
 
     // Load OpenStreetMap base map
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
+
+    // Function to fetch survey data from ArcGIS Feature Layer
+    async function fetchSurveyData() {
+        // Survey results, ArcGIS Online feature layer URL
+        const featureLayerUrl = "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/survey123_e28761d4a7bc44d98d45bf4925cc7238_results/FeatureServer/0";
+        const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=student_name,poi_rating,poi_review&f=json`;
+
+        try {
+            const response = await fetch(queryUrl);
+            const data = await response.json();
+
+            if (data.error) {
+                console.error("Error fetching survey data:", data.error);
+                return;
+            }
+
+            // Add markers for each survey record
+            data.features.forEach(feature => {
+                const lat = feature.geometry.y; // Latitude
+                const lng = feature.geometry.x; // Longitude
+                const attributes = feature.attributes; // Survey data attributes
+
+                // Create a marker
+                const marker = L.marker([lat, lng]).addTo(map);
+
+                // Create popup content
+                const popupContent = `
+                    <b>Student Name:</b> ${attributes.student_name || 'N/A'}<br>
+                    <b>Rating:</b> ${attributes.poi_rating || 'N/A'}<br>
+                    <b>Review:</b> ${attributes.poi_review || 'N/A'}
+                `;
+
+                // Bind popup to marker
+                marker.bindPopup(popupContent);
+            });
+        } catch (error) {
+            console.error("Failed to fetch survey data:", error);
+        }
+    }
+
+    // Fetch and display survey data when the page loads
+    fetchSurveyData();
 
 </script>
 
