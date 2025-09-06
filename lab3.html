@@ -7,41 +7,12 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        #map {
-            height: 800px;
-            margin: 20px;
-            border: 2px solid white;
-        }
-        #logo-container {
-            position: absolute; /* Absolute positioning */
-            top: 20px;        /* 20px from the top */
-            left: 30px;       /* 30px from the left */
-            z-index: 1000;    /* Ensure it's above other elements (like the map) */
-        }
-        #logo-container img {
-            max-width: 120px; /* Limit logo width */
-            height: auto; /* Maintain aspect ratio */
-            display: block; /* Remove any potential extra spacing below the image */
-        }
-        /* popup image styles */
-        .popup-photo {
-            display:block;
-            max-width:280px;
-            max-height:200px;
-            margin-top:6px;
-            border:1px solid #ddd;
-        }
-        .popup-loading {
-            color: #666;
-            font-size: 0.9em;
-            margin-top:6px;
-            display:block;
-        }
-        .popup-link {
-            display:block;
-            margin-top:6px;
-            font-size:0.9em;
-        }
+        #map { height: 800px; margin: 20px; border: 2px solid white; }
+        #logo-container { position: absolute; top: 20px; left: 30px; z-index: 1000; }
+        #logo-container img { max-width: 120px; height: auto; display: block; }
+        .popup-photo { display:block; max-width:280px; max-height:200px; margin-top:6px; border:1px solid #ddd; }
+        .popup-loading { color:#666; font-size:0.9em; margin-top:6px; display:block; }
+        .popup-link { display:block; margin-top:6px; font-size:0.9em; }
     </style>
     <meta name="author" content="Chang Li 李畅">
     <meta name="date" content="2025-02-18">
@@ -49,7 +20,6 @@
 </head>
 <body>
 
-<!-- UNL logo -->
 <div id="logo-container">
     <img src="image/R_Nebraska_N_2023_name_RGB.png" alt="University of Nebraska-Lincoln">
 </div>
@@ -58,111 +28,115 @@
 <p style="text-align: center;">Chang Li @ UNL</p>
 <p style="text-align: center;">
     <span style="display: inline-block; text-align: left;">
-        Go to <a href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">
-        https://arcg.is/1WSeza</a> to participate in the activity.
+        Go to <a href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">https://arcg.is/1WSeza</a> to participate.
         After submitting the survey, refresh this page.<br>
-        Take a screenshot of your POI with the popup showing
-        your name, section, rating, and review.<br>
+        Take a screenshot of your POI with the popup showing your name, section, rating, and review.<br>
         Submit the screenshot to Canvas.
     </span>
 </p>
 
-
-<!-- The map -->
 <div id="map"></div>
-<!-- Import Leaflet JS -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
-    const initialCenter = [40.82, -96.70];  // Map center UNL City Campus
-    const bounds = L.latLngBounds([-90, -180], [90, 180]);  // Restrict world, cannot drag unlimited
+    const initialCenter = [40.82, -96.70];
+    const bounds = L.latLngBounds([-90, -180], [90, 180]);
 
     const map = L.map('map', {
         worldCopyJump: false,
         maxBounds: bounds,
         maxBoundsViscosity: 0.9,
         minZoom: 2
-    }).setView(initialCenter, 12); // Set initial center and zoom level
+    }).setView(initialCenter, 12);
 
-    // Load OpenStreetMap base map
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // Function to fetch survey data from ArcGIS Feature Layer
-    async function fetchSurveyData() {
-        // Survey results, ArcGIS Online feature layer URL
-        const featureLayerUrl = "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/survey123_e28761d4a7bc44d98d45bf4925cc7238_results/FeatureServer/0";
+    // Feature layer base URL
+    const featureLayerUrl = "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/survey123_e28761d4a7bc44d98d45bf4925cc7238_results/FeatureServer/0";
 
-        // NOTE: include OBJECTID so we can build attachment URL
-        const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=OBJECTID,student_name,student_section,poi_rating,poi_review&f=json`;
+    // If your layer requires a token, set it here (null for public)
+    const ATTACHMENT_TOKEN = null; // or 'your_token_here'
+
+    async function fetchSurveyData() {
+        const outFields = "OBJECTID,student_name,student_section,poi_rating,poi_review";
+        const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=${encodeURIComponent(outFields)}&returnGeometry=true&f=json`;
 
         try {
-            const response = await fetch(queryUrl);
-            const data = await response.json();
-
-            if (data.error) {
-                console.error("Error fetching survey data:", data.error);
-                return;
-            }
-
-            // Add markers for each survey record
+            const resp = await fetch(queryUrl);
+            const data = await resp.json();
+            if (data.error) { console.error("Feature query error:", data.error); return; }
             data.features.forEach(feature => {
-                const lat = feature.geometry?.y; // Latitude
-                const lng = feature.geometry?.x; // Longitude
-                const attributes = feature.attributes || {}; // Survey data attributes
+                const lat = feature.geometry?.y;
+                const lng = feature.geometry?.x;
+                const attr = feature.attributes || {};
+                if (typeof lat !== 'number' || typeof lng !== 'number') return;
 
-                if (typeof lat !== 'number' || typeof lng !== 'number') return; // skip invalid geometry
-
-                // Create a marker
                 const marker = L.marker([lat, lng]).addTo(map);
 
-                // safe extraction of objectId (try common names)
-                const objectId = attributes.OBJECTID || attributes.objectid || attributes.ObjectID || attributes.OBJECTID_1 || attributes.FID;
-
-                // Create popup content with a loading placeholder for the image
-                const popupContent = `
+                // Ensure we request OBJECTID from attributes
+                const objectId = attr.OBJECTID || attr.objectid || attr.ObjectID || attr.FID;
+                const basePopup = `
                     <div>
-                        <b>Student Name:</b> ${attributes.student_name || 'N/A'}<br>
-                        <b>Lab Section:</b> ${attributes.student_section || 'N/A'}<br>
-                        <b>Rating:</b> ${attributes.poi_rating || 'N/A'}<br>
-                        <b>Review:</b> ${attributes.poi_review || 'N/A'}<br>
-                        <span class="popup-loading">Loading image...</span>
+                      <b>Student Name:</b> ${attr.student_name || 'N/A'}<br>
+                      <b>Lab Section:</b> ${attr.student_section || 'N/A'}<br>
+                      <b>Rating:</b> ${attr.poi_rating || 'N/A'}<br>
+                      <b>Review:</b> ${attr.poi_review || 'N/A'}<br>
+                      <span class="popup-loading">Loading image...</span>
                     </div>
                 `;
+                marker.bindPopup(basePopup);
 
-                // Bind popup to marker
-                marker.bindPopup(popupContent);
-
-                // Build the attachment URL using attachmentId = 2 (per your request)
-                // URL template: <featureLayerUrl>/<OBJECTID>/attachments/<ATTACHMENTID>
+                // Fetch attachments for this objectId and show first image attachment if present
                 (async () => {
+                    if (!objectId) {
+                        const noId = basePopup.replace('<span class="popup-loading">Loading image...</span>',
+                            '<span class="popup-loading">No OBJECTID found; cannot load image.</span>');
+                        marker.getPopup().setContent(noId);
+                        return;
+                    }
                     try {
-                        if (!objectId) {
-                            // update popup to show missing objectid
-                            const noIdContent = popupContent.replace(
-                                '<span class="popup-loading">Loading image...</span>',
-                                '<span class="popup-loading">No OBJECTID found; cannot load image.</span>'
-                            );
-                            marker.getPopup().setContent(noIdContent);
+                        // attachments endpoint for this feature
+                        const attachUrl = `${featureLayerUrl}/${objectId}/attachments?f=json${ATTACHMENT_TOKEN ? '&token=' + encodeURIComponent(ATTACHMENT_TOKEN) : ''}`;
+                        const aResp = await fetch(attachUrl);
+                        const aJson = await aResp.json();
+                        console.log("attachments for", objectId, aJson); // inspect in console
+
+                        const infos = aJson?.attachmentInfos || aJson?.attachments || [];
+                        if (!infos || infos.length === 0) {
+                            const noImage = basePopup.replace('<span class="popup-loading">Loading image...</span>',
+                                '<span class="popup-loading">No image uploaded</span>');
+                            marker.getPopup().setContent(noImage);
                             return;
                         }
 
-                        const attachmentId = 2; // fixed for now as requested
-                        const imageUrl = `${featureLayerUrl}/${objectId}/attachments/${attachmentId}`;
+                        // pick the first image-like attachment, otherwise first attachment
+                        const firstImg = infos.find(i => i.contentType && i.contentType.startsWith('image')) || infos[0];
+                        const attachmentId = firstImg?.id ?? firstImg?.attachmentId ?? firstImg?.ATTACHMENTID;
 
-                        // Preload the image to determine success/failure before replacing popup content
+                        if (typeof attachmentId === 'undefined') {
+                            const missing = basePopup.replace('<span class="popup-loading">Loading image...</span>',
+                                '<span class="popup-loading">Attachment ID not found in response</span>');
+                            marker.getPopup().setContent(missing);
+                            return;
+                        }
+
+                        // build the image URL and preload it
+                        let imageUrl = `${featureLayerUrl}/${objectId}/attachments/${attachmentId}`;
+                        if (ATTACHMENT_TOKEN) imageUrl += '?token=' + encodeURIComponent(ATTACHMENT_TOKEN);
+
                         await new Promise(resolve => {
                             const img = new Image();
                             img.onload = () => {
-                                const imageHtml = `<a class="popup-link" href="${imageUrl}" target="_blank" rel="noopener noreferrer"><img class="popup-photo" src="${imageUrl}" alt="Survey photo" /></a>`;
-                                const newContent = popupContent.replace('<span class="popup-loading">Loading image...</span>', imageHtml);
+                                const html = `<a class="popup-link" href="${imageUrl}" target="_blank" rel="noopener noreferrer"><img class="popup-photo" src="${imageUrl}" alt="Survey photo"/></a>`;
+                                const newContent = basePopup.replace('<span class="popup-loading">Loading image...</span>', html);
                                 marker.getPopup().setContent(newContent);
                                 resolve();
                             };
                             img.onerror = () => {
-                                console.warn('Image failed to load:', imageUrl);
-                                const fallbackHtml = `<span class="popup-loading">Image failed to load.</span><a class="popup-link" href="${imageUrl}" target="_blank" rel="noopener noreferrer">Open image in new tab</a>`;
-                                const newContent = popupContent.replace('<span class="popup-loading">Loading image...</span>', fallbackHtml);
+                                console.warn("Image load error for", imageUrl);
+                                const fallback = `<span class="popup-loading">Image failed to load</span><a class="popup-link" href="${imageUrl}" target="_blank" rel="noopener noreferrer">Open image in new tab</a>`;
+                                const newContent = basePopup.replace('<span class="popup-loading">Loading image...</span>', fallback);
                                 marker.getPopup().setContent(newContent);
                                 resolve();
                             };
@@ -170,24 +144,21 @@
                         });
 
                     } catch (err) {
-                        console.error("Error building/loading image for feature", objectId, err);
-                        const errContent = popupContent.replace(
-                            '<span class="popup-loading">Loading image...</span>',
-                            '<span class="popup-loading">Error loading image.</span>'
-                        );
-                        marker.getPopup().setContent(errContent);
+                        console.error("Error fetching attachments for", objectId, err);
+                        const errHtml = basePopup.replace('<span class="popup-loading">Loading image...</span>',
+                            '<span class="popup-loading">Error fetching attachments (see console)</span>');
+                        marker.getPopup().setContent(errHtml);
                     }
                 })();
 
             });
-        } catch (error) {
-            console.error("Failed to fetch survey data:", error);
+
+        } catch (err) {
+            console.error("Failed to fetch features:", err);
         }
     }
 
-    // Fetch and display survey data when the page loads
     fetchSurveyData();
-
 </script>
 
 </body>
