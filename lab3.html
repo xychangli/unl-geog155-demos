@@ -23,6 +23,20 @@
             height: auto; /* Maintain aspect ratio */
             display: block; /* Remove any potential extra spacing below the image */
         }
+        /* small popup image styling */
+        .popup-photo {
+            display:block;
+            max-width:280px;
+            max-height:200px;
+            margin-top:6px;
+            border:1px solid #ddd;
+        }
+        .popup-loading {
+            color: #666;
+            font-size: 0.9em;
+            margin-top:6px;
+            display:block;
+        }
     </style>
     <meta name="author" content="Chang Li 李畅">
     <meta name="date" content="2025-02-18">
@@ -51,7 +65,7 @@
 
 <!-- The map -->
 <div id="map"></div>
-<!-- Import Leaflet JS -->
+<!-- Import Leaflet JS (already included above, harmless duplicate) -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     const initialCenter = [40.82, -96.70];  // Map center UNL City Campus
@@ -73,7 +87,9 @@
     async function fetchSurveyData() {
         // Survey results, ArcGIS Online feature layer URL
         const featureLayerUrl = "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/survey123_e28761d4a7bc44d98d45bf4925cc7238_results/FeatureServer/0";
-        const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=student_name,student_section,poi_rating,poi_review&f=json`;
+        // include OBJECTID so we can query attachments for each feature
+        const outFields = "OBJECTID,student_name,student_section,poi_rating,poi_review";
+        const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=${outFields}&f=json`;
 
         try {
             const response = await fetch(queryUrl);
@@ -86,19 +102,27 @@
 
             // Add markers for each survey record
             data.features.forEach(feature => {
-                const lat = feature.geometry.y; // Latitude
-                const lng = feature.geometry.x; // Longitude
-                const attributes = feature.attributes; // Survey data attributes
+                const lat = feature.geometry?.y; // Latitude (guarded)
+                const lng = feature.geometry?.x; // Longitude
+                const attributes = feature.attributes || {}; // Survey data attributes
+
+                if (typeof lat !== 'number' || typeof lng !== 'number') return; // skip invalid geometry
 
                 // Create a marker
                 const marker = L.marker([lat, lng]).addTo(map);
 
-                // Create popup content
-                const popupContent = `
-                    <b>Student Name:</b> ${attributes.student_name || 'N/A'}<br>
-                    <b>Lab Section:</b> ${attributes.student_section || 'N/A'}<br>
-                    <b>Rating:</b> ${attributes.poi_rating || 'N/A'}<br>
-                    <b>Review:</b> ${attributes.poi_review || 'N/A'}
+                // try several possible object id keys (fields can vary)
+                const objectId = attributes.OBJECTID || attributes.objectid || attributes.ObjectID || attributes.OBJECTID_1 || attributes.FID;
+
+                // Create base popup content (placeholder for image)
+                const baseContent = `
+                    <div>
+                      <b>Student Name:</b> ${attributes.student_name || 'N/A'}<br>
+                      <b>Lab Section:</b> ${attributes.student_section || 'N/A'}<br>
+                      <b>Rating:</b> ${attributes.poi_rating || 'N/A'}<br>
+                      <b>Review:</b> ${attributes.poi_review || 'N/A'}<br>
+                      <span class="popup-loading">Loading image...</span>
+                    </div>
                 `;
 
                 // Bind popup to marker with the loading placeholder
