@@ -7,44 +7,17 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        #map {
-            height: 800px;
-            margin: 20px;
-            border: 2px solid white;
-        }
-        #logo-container {
-            position: absolute; /* Absolute positioning */
-            top: 20px;        /* 20px from the top */
-            left: 30px;       /* 30px from the left */
-            z-index: 1000;    /* Ensure it's above other elements (like the map) */
-        }
-        #logo-container img {
-            max-width: 120px; /* Limit logo width */
-            height: auto; /* Maintain aspect ratio */
-            display: block; /* Remove any potential extra spacing below the image */
-        }
-        /* small popup image styling */
-        .popup-photo {
-            display:block;
-            max-width:280px;
-            max-height:200px;
-            margin-top:6px;
-            border:1px solid #ddd;
-        }
-        .popup-loading {
-            color: #666;
-            font-size: 0.9em;
-            margin-top:6px;
-            display:block;
-        }
+        #map { height: 800px; margin: 20px; border: 2px solid white; }
+        #logo-container { position: absolute; top: 20px; left: 30px; z-index: 1000; }
+        #logo-container img { max-width: 120px; height: auto; display: block; }
+        .popup-photo { display:block; max-width:280px; max-height:200px; margin-top:6px; border:1px solid #ddd; }
+        .popup-loading { color:#666; font-size:0.9em; margin-top:6px; display:block; }
+        .popup-link { margin-top:6px; display:block; font-size:0.9em; }
     </style>
     <meta name="author" content="Chang Li 李畅">
     <meta name="date" content="2025-02-18">
-    <meta name="description" content="Interactive map to display Volunteered Geographic Information.">
 </head>
 <body>
-
-<!-- UNL logo -->
 <div id="logo-container">
     <img src="image/R_Nebraska_N_2023_name_RGB.png" alt="University of Nebraska-Lincoln">
 </div>
@@ -53,131 +26,162 @@
 <p style="text-align: center;">Chang Li @ UNL</p>
 <p style="text-align: center;">
     <span style="display: inline-block; text-align: left;">
-        Go to <a href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">
-        https://arcg.is/1WSeza</a> to participate in the activity.
+        Go to <a href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">https://arcg.is/1WSeza</a> to participate.
         After submitting the survey, refresh this page.<br>
-        Take a screenshot of your POI with the popup showing
-        your name, section, rating, and review.<br>
+        Take a screenshot of your POI with the popup showing your name, section, rating, and review.<br>
         Submit the screenshot to Canvas.
     </span>
 </p>
 
-
-<!-- The map -->
 <div id="map"></div>
-<!-- Import Leaflet JS (already included above, harmless duplicate) -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
-    const initialCenter = [40.82, -96.70];  // Map center UNL City Campus
-    const bounds = L.latLngBounds([-90, -180], [90, 180]);  // Restrict world, cannot drag unlimited
+(async () => {
+  const featureLayerUrl = "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/survey123_e28761d4a7bc44d98d45bf4925cc7238_results/FeatureServer/0";
+  // If your layer requires a token, set it here:
+  const ATTACHMENT_TOKEN = null; // e.g. "XXXXX" or null for public layers
 
-    const map = L.map('map', {
-        worldCopyJump: false,
-        maxBounds: bounds,
-        maxBoundsViscosity: 0.9,
-        minZoom: 2
-    }).setView(initialCenter, 12); // Set initial center and zoom level
+  const initialCenter = [40.82, -96.70];
+  const bounds = L.latLngBounds([-90, -180], [90, 180]);
+  const map = L.map('map', { worldCopyJump:false, maxBounds:bounds, maxBoundsViscosity:0.9, minZoom:2 }).setView(initialCenter, 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
 
-    // Load OpenStreetMap base map
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    }).addTo(map);
+  // 1) fetch features (attributes + geometry)
+  const outFields = "OBJECTID,student_name,student_section,poi_rating,poi_review";
+  const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=${encodeURIComponent(outFields)}&returnGeometry=true&f=json`;
+  let features;
+  try {
+    const resp = await fetch(queryUrl);
+    const json = await resp.json();
+    if (json.error) { console.error("Feature query error:", json.error); return; }
+    features = json.features || [];
+    console.log("Fetched features count:", features.length);
+  } catch (err) {
+    console.error("Failed to fetch features:", err);
+    return;
+  }
 
-    // Function to fetch survey data from ArcGIS Feature Layer
-    async function fetchSurveyData() {
-        // Survey results, ArcGIS Online feature layer URL
-        const featureLayerUrl = "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/survey123_e28761d4a7bc44d98d45bf4925cc7238_results/FeatureServer/0";
-        // include OBJECTID so we can query attachments for each feature
-        const outFields = "OBJECTID,student_name,student_section,poi_rating,poi_review";
-        const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=${outFields}&f=json`;
+  if (features.length === 0) return;
 
-        try {
-            const response = await fetch(queryUrl);
-            const data = await response.json();
+  // 2) build list of objectIds and request attachments for all of them in one call
+  const objectIds = features.map(f => f.attributes?.OBJECTID).filter(id => typeof id === 'number');
+  if (objectIds.length === 0) {
+    console.warn("No OBJECTIDs found in features.");
+  }
 
-            if (data.error) {
-                console.error("Error fetching survey data:", data.error);
-                return;
-            }
+  // Construct queryAttachments URL (use objectIds parameter)
+  const attachmentQueryUrl = `${featureLayerUrl}/queryAttachments?objectIds=${objectIds.join(',')}&f=json${ATTACHMENT_TOKEN ? '&token=' + encodeURIComponent(ATTACHMENT_TOKEN) : ''}`;
+  let attachmentsJson = {};
+  try {
+    const aResp = await fetch(attachmentQueryUrl);
+    attachmentsJson = await aResp.json();
+    console.log("queryAttachments result:", attachmentsJson);
+  } catch (err) {
+    console.warn("Failed to fetch queryAttachments (will try per-feature attachments):", err);
+    attachmentsJson = {}; // we'll still try per-feature later
+  }
 
-            // Add markers for each survey record
-            data.features.forEach(feature => {
-                const lat = feature.geometry?.y; // Latitude (guarded)
-                const lng = feature.geometry?.x; // Longitude
-                const attributes = feature.attributes || {}; // Survey data attributes
+  // Build a map: objectId -> array of attachmentInfos
+  const attachmentsMap = {};
+  if (attachmentsJson?.attachmentGroups && Array.isArray(attachmentsJson.attachmentGroups)) {
+    attachmentsJson.attachmentGroups.forEach(group => {
+      const oid = group?.parentObjectId;
+      const infos = group?.attachmentInfos || [];
+      attachmentsMap[oid] = infos;
+    });
+  } else if (attachmentsJson?.attachmentInfos && Array.isArray(attachmentsJson.attachmentInfos)) {
+    // fallback (unlikely)
+    attachmentsJson.attachmentInfos.forEach(info => {
+      const oid = info?.parentObjectId || info?.objectId;
+      attachmentsMap[oid] = attachmentsMap[oid] || [];
+      attachmentsMap[oid].push(info);
+    });
+  }
 
-                if (typeof lat !== 'number' || typeof lng !== 'number') return; // skip invalid geometry
+  // Helper: build attachment URL given objectId and attachmentId
+  function buildAttachmentUrl(objectId, attachmentId) {
+    let url = `${featureLayerUrl}/${objectId}/attachments/${attachmentId}`;
+    if (ATTACHMENT_TOKEN) url += '?token=' + encodeURIComponent(ATTACHMENT_TOKEN);
+    return url;
+  }
 
-                // Create a marker
-                const marker = L.marker([lat, lng]).addTo(map);
+  // For each feature, add marker + popup. If attachmentsMap doesn't contain entries for that objectId,
+  // we'll attempt a per-feature attachments fetch.
+  for (const feature of features) {
+    const geom = feature.geometry;
+    if (!geom || typeof geom.x !== 'number' || typeof geom.y !== 'number') continue;
+    const lat = geom.y, lng = geom.x;
+    const attr = feature.attributes || {};
+    const objectId = attr.OBJECTID;
 
-                // try several possible object id keys (fields can vary)
-                const objectId = attributes.OBJECTID || attributes.objectid || attributes.ObjectID || attributes.OBJECTID_1 || attributes.FID;
+    const marker = L.marker([lat, lng]).addTo(map);
 
-                // Create base popup content (placeholder for image)
-                const baseContent = `
-                    <div>
-                      <b>Student Name:</b> ${attributes.student_name || 'N/A'}<br>
-                      <b>Lab Section:</b> ${attributes.student_section || 'N/A'}<br>
-                      <b>Rating:</b> ${attributes.poi_rating || 'N/A'}<br>
-                      <b>Review:</b> ${attributes.poi_review || 'N/A'}<br>
-                      <span class="popup-loading">Loading image...</span>
-                    </div>
-                `;
+    // base popup content with placeholder
+    const baseContent = `
+      <div>
+        <b>Student Name:</b> ${attr.student_name || 'N/A'}<br>
+        <b>Lab Section:</b> ${attr.student_section || 'N/A'}<br>
+        <b>Rating:</b> ${attr.poi_rating || 'N/A'}<br>
+        <b>Review:</b> ${attr.poi_review || 'N/A'}<br>
+        <span class="popup-loading">Loading image...</span>
+      </div>
+    `;
+    marker.bindPopup(baseContent);
 
-                // Bind popup to marker with the loading placeholder
-                marker.bindPopup(baseContent);
+    // find attachments for this objectId (from bulk query response if available)
+    let infos = attachmentsMap[objectId];
 
-                // Asynchronously fetch attachments for this feature (if objectId exists)
-                (async () => {
-                    try {
-                        if (!objectId) {
-                            // replace loading text with "No image uploaded" when no objectId found
-                            const noObjContent = baseContent.replace('<span class="popup-loading">Loading image...</span>',
-                                                                     '<span class="popup-loading">No image available (no OBJECTID)</span>');
-                            marker.getPopup().setContent(noObjContent);
-                            return;
-                        }
-
-                        const attachUrl = `${featureLayerUrl}/${objectId}/attachments?f=json`;
-                        const aResp = await fetch(attachUrl);
-                        const aJson = await aResp.json();
-
-                        // ArcGIS returns attachmentInfos array under 'attachmentInfos'
-                        const attachments = aJson && (aJson.attachmentInfos || aJson.attachments || []);
-                        let imageHtml = '<span class="popup-loading">No image uploaded</span>';
-
-                        if (attachments && attachments.length > 0) {
-                            // choose the first attachment that looks like an image (contentType check)
-                            const firstImage = attachments.find(a => (a.contentType && a.contentType.startsWith('image'))) || attachments[0];
-                            // attachment url is usually in 'url'
-                            const imageUrl = firstImage.url || firstImage.URL || firstImage.path;
-
-                            // build <img> tag (add crossorigin attribute if needed)
-                            imageHtml = `<img class="popup-photo" src="${imageUrl}" alt="Survey photo" />`;
-                        }
-
-                        // replace the loading span with the imageHtml
-                        const newContent = baseContent.replace('<span class="popup-loading">Loading image...</span>', imageHtml);
-                        marker.getPopup().setContent(newContent);
-
-                    } catch (err) {
-                        console.error("Error fetching attachments for feature", objectId, err);
-                        const errContent = baseContent.replace('<span class="popup-loading">Loading image...</span>',
-                                                              '<span class="popup-loading">Error loading image</span>');
-                        marker.getPopup().setContent(errContent);
-                    }
-                })();
-            });
-        } catch (error) {
-            console.error("Failed to fetch survey data:", error);
+    // If not found, try per-feature attachments endpoint (fallback)
+    if ((!infos || infos.length === 0) && objectId) {
+      try {
+        const perUrl = `${featureLayerUrl}/${objectId}/attachments?f=json${ATTACHMENT_TOKEN ? '&token=' + encodeURIComponent(ATTACHMENT_TOKEN) : ''}`;
+        const pResp = await fetch(perUrl);
+        const pJson = await pResp.json();
+        // ArcGIS typically returns 'attachmentInfos'
+        infos = pJson?.attachmentInfos || pJson?.attachments || [];
+        if (infos && infos.length > 0) {
+          attachmentsMap[objectId] = infos; // cache it
         }
+        console.log(`attachments for ${objectId}:`, infos);
+      } catch (err) {
+        console.warn("per-feature attachments fetch failed for", objectId, err);
+      }
     }
 
-    // Fetch and display survey data when the page loads
-    fetchSurveyData();
+    // choose first image-like attachment if present
+    let imageHtml = '<span class="popup-loading">No image uploaded</span>';
+    if (infos && infos.length > 0) {
+      const firstImg = infos.find(a => a.contentType && a.contentType.startsWith('image')) || infos[0];
+      const aid = firstImg?.id ?? firstImg?.attachmentId ?? firstImg?.ATTACHMENTID;
+      if (typeof aid !== 'undefined') {
+        const imageUrl = buildAttachmentUrl(objectId, aid);
+        // preload
+        await new Promise(resolve => {
+          const img = new Image();
+          img.onload = () => {
+            imageHtml = `<a class="popup-link" href="${imageUrl}" target="_blank" rel="noopener noreferrer"><img class="popup-photo" src="${imageUrl}" alt="Survey photo" /></a>`;
+            resolve();
+          };
+          img.onerror = () => {
+            console.warn("Image failed to load:", imageUrl);
+            imageHtml = `<span class="popup-loading">Image failed to load (see console)</span>
+                         <a class="popup-link" href="${imageUrl}" target="_blank" rel="noopener noreferrer">Open image in new tab</a>`;
+            resolve();
+          };
+          img.src = imageUrl;
+        });
+      } else {
+        imageHtml = '<span class="popup-loading">Attachment id missing</span>';
+      }
+    }
 
+    // set the new content into the popup (works whether it's open or not)
+    const newContent = baseContent.replace('<span class="popup-loading">Loading image...</span>', imageHtml);
+    marker.getPopup().setContent(newContent);
+  } // end features loop
+
+  console.log("All markers added.");
+})(); 
 </script>
-
 </body>
 </html>
