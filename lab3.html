@@ -101,8 +101,49 @@
                     <b>Review:</b> ${attributes.poi_review || 'N/A'}
                 `;
 
-                // Bind popup to marker
-                marker.bindPopup(popupContent);
+                // Bind popup to marker with the loading placeholder
+                marker.bindPopup(baseContent);
+
+                // Asynchronously fetch attachments for this feature (if objectId exists)
+                (async () => {
+                    try {
+                        if (!objectId) {
+                            // replace loading text with "No image uploaded" when no objectId found
+                            const noObjContent = baseContent.replace('<span class="popup-loading">Loading image...</span>',
+                                                                     '<span class="popup-loading">No image available (no OBJECTID)</span>');
+                            marker.getPopup().setContent(noObjContent);
+                            return;
+                        }
+
+                        const attachUrl = `${featureLayerUrl}/${objectId}/attachments?f=json`;
+                        const aResp = await fetch(attachUrl);
+                        const aJson = await aResp.json();
+
+                        // ArcGIS returns attachmentInfos array under 'attachmentInfos'
+                        const attachments = aJson && (aJson.attachmentInfos || aJson.attachments || []);
+                        let imageHtml = '<span class="popup-loading">No image uploaded</span>';
+
+                        if (attachments && attachments.length > 0) {
+                            // choose the first attachment that looks like an image (contentType check)
+                            const firstImage = attachments.find(a => (a.contentType && a.contentType.startsWith('image'))) || attachments[0];
+                            // attachment url is usually in 'url'
+                            const imageUrl = firstImage.url || firstImage.URL || firstImage.path;
+
+                            // build <img> tag (add crossorigin attribute if needed)
+                            imageHtml = `<img class="popup-photo" src="${imageUrl}" alt="Survey photo" />`;
+                        }
+
+                        // replace the loading span with the imageHtml
+                        const newContent = baseContent.replace('<span class="popup-loading">Loading image...</span>', imageHtml);
+                        marker.getPopup().setContent(newContent);
+
+                    } catch (err) {
+                        console.error("Error fetching attachments for feature", objectId, err);
+                        const errContent = baseContent.replace('<span class="popup-loading">Loading image...</span>',
+                                                              '<span class="popup-loading">Error loading image</span>');
+                        marker.getPopup().setContent(errContent);
+                    }
+                })();
             });
         } catch (error) {
             console.error("Failed to fetch survey data:", error);
