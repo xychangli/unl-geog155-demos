@@ -2,41 +2,260 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- NEW: makes the page scale properly on phones/tablets -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="image/Nebraska_N_RGB.png" type="image/png">
     <title>GEOG 155 Lab 4 Time Zone Demo</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Turf.js for spatial analysis -->
     <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+    <!-- NEW: web fonts (Inter for text, JetBrains Mono for the digital clocks) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <style>
-        #map {
-            height: 800px;
-            margin: 20px;
-            border: 2px solid white;
+        /* ================================================================
+           NEW UI STYLES
+           Everything below only changes how the page LOOKS.
+           The map logic in the <script> at the bottom is (almost) unchanged.
+           ================================================================ */
+
+        /* Color palette: a dark "night sky" panel with UNL scarlet accents */
+        :root {
+            --scarlet: #D00000;
+            --scarlet-glow: #FF4D4D;
+            --panel: rgba(13, 17, 30, 0.9);
+            --tile: rgba(255, 255, 255, 0.06);
+            --text: #F3F1EA;
+            --muted: #9AA0B4;
+            --line: rgba(255, 255, 255, 0.1);
+            --shadow: 0 14px 36px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.2);
+            --radius: 16px;
         }
-        #search-container {
-            text-align: center;
-            margin: 20px;
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            height: 100%;
+            font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+            background: #0D111E;
         }
+
+        /* The map now fills the whole browser window (it used to be a fixed 800px box) */
+        #map { position: fixed; inset: 0; height: 100%; z-index: 0; }
+
+        /* ---------- Floating side panel ---------- */
+        #panel {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            bottom: 16px;
+            width: 370px;
+            max-width: calc(100vw - 32px);
+            display: flex;
+            flex-direction: column;
+            color: var(--text);
+            background: var(--panel);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            z-index: 1000;                 /* above the map */
+            transition: transform 0.35s ease, opacity 0.35s ease;
+        }
+        body.panel-hidden #panel { transform: translateX(calc(-100% - 24px)); opacity: 0; pointer-events: none; }
+
+        /* White strip at the top so the UNL logo stays readable */
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: #fff;
+            border-bottom: 4px solid var(--scarlet);
+        }
+        #logo-container img { max-width: 150px; height: auto; display: block; }
+        .icon-btn {
+            border: 1px solid #e3e3e3;
+            background: #fff;
+            width: 34px; height: 34px;
+            border-radius: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            color: #666;
+        }
+        .icon-btn:hover { color: var(--scarlet); border-color: var(--scarlet); }
+
+        .panel-body { padding: 18px; overflow-y: auto; flex: 1; }
+        .kicker { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--scarlet-glow); }
+        h1 { margin: 4px 0 4px; font-size: 30px; line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; }
+        .byline { margin: 0 0 16px; font-size: 13px; color: var(--muted); }
+
+        /* ---------- Digital clocks ---------- */
+        .clocks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+        .clock { background: var(--tile); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+        .clock small { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+        .clock .digits {
+            display: block;
+            font-family: "JetBrains Mono", monospace;
+            font-size: 26px;
+            font-weight: 700;
+            margin: 2px 0;
+            text-shadow: 0 0 14px rgba(255, 77, 77, 0.35);
+        }
+        .clock .full { display: block; font-size: 11px; color: var(--muted); line-height: 1.35; }
+        .clock.utc .digits { color: var(--scarlet-glow); }
+
+        /* ---------- Search ---------- */
+        .section-label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+        #search-container { display: flex; gap: 6px; }
         #search-box {
-            width: 300px;
-            padding: 5px;
-            font-size: 16px;
+            flex: 1;
+            min-width: 0;
+            padding: 11px 12px;
+            font: inherit;
+            font-size: 15px;
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--line);
+            border-radius: 10px;
         }
+        #search-box::placeholder { color: var(--muted); }
+        #search-box:focus { outline: 2px solid var(--scarlet-glow); outline-offset: 1px; }
         #search-button {
-            padding: 6px 10px;
-            font-size: 16px;
+            padding: 0 16px;
+            font: inherit;
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            background: var(--scarlet);
+            border: none;
+            border-radius: 10px;
             cursor: pointer;
         }
-        #logo-container {
-            position: absolute; /* Absolute positioning */
-            top: 120px;        /* 10px from the top */
-            left: 30px;       /* 10px from the left */
-            z-index: 1000;    /* Ensure it's above other elements (like the map) */
+        #search-button:hover { background: #E81A1A; }
+        #search-button:disabled { opacity: 0.5; cursor: progress; }
+
+        /* Quick-try place chips */
+        .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 16px; }
+        .chip {
+            padding: 5px 10px;
+            font: inherit;
+            font-size: 12px;
+            color: var(--text);
+            background: var(--tile);
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            cursor: pointer;
         }
-        #logo-container img {
-            max-width: 120px; /* Limit logo width */
-            height: auto; /* Maintain aspect ratio */
-            display: block; /* Remove any potential extra spacing below the image */
+        .chip:hover { border-color: var(--scarlet-glow); color: #fff; }
+
+        /* ---------- Search result card ---------- */
+        #result {
+            display: none;
+            padding: 14px;
+            margin-bottom: 16px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(208, 0, 0, 0.35), rgba(208, 0, 0, 0.1));
+            border: 1px solid rgba(255, 77, 77, 0.4);
+        }
+        #result.show { display: block; animation: pop 0.3s ease; }
+        @keyframes pop { from { transform: translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
+        #result-place { font-size: 13px; line-height: 1.4; margin-bottom: 10px; }
+        .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .result-grid small { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #FFC9C9; }
+        .result-grid b { font-family: "JetBrains Mono", monospace; font-size: 22px; }
+        .result-grid .sub { display: block; font-size: 12px; color: #FFC9C9; }
+        #result-diff { margin-top: 10px; font-size: 14px; font-weight: 600; }
+
+        .note { font-size: 12px; line-height: 1.5; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; margin: 0; }
+        .note b { color: var(--text); }
+
+        /* Button that brings the panel back after hiding it */
+        #panel-open {
+            position: fixed;
+            top: 16px; left: 16px;
+            z-index: 1000;
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: none;
+            background: var(--scarlet);
+            color: #fff;
+            font: inherit;
+            font-weight: 700;
+            box-shadow: var(--shadow);
+            cursor: pointer;
+            display: none;
+        }
+        body.panel-hidden #panel-open { display: block; }
+
+        /* ---------- "Hovering over" readout at the bottom of the map ---------- */
+        #hover-readout {
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 900;
+            padding: 8px 16px;
+            border-radius: 999px;
+            color: var(--text);
+            background: var(--panel);
+            border: 1px solid var(--line);
+            box-shadow: var(--shadow);
+            font-size: 14px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        #hover-readout.show { opacity: 1; }
+        #hover-readout b { font-family: "JetBrains Mono", monospace; color: var(--scarlet-glow); }
+
+        /* ---------- Toast messages (replace the old browser alert boxes) ---------- */
+        #toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translate(-50%, -20px);
+            z-index: 1200;
+            padding: 10px 18px;
+            border-radius: 999px;
+            color: #fff;
+            background: var(--scarlet);
+            box-shadow: var(--shadow);
+            font-size: 14px;
+            font-weight: 600;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+        /* ---------- The glowing sun marker ---------- */
+        .sun-icon { background: none; border: none; }
+        .sun-icon div {
+            width: 26px; height: 26px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #FFF6B0 0%, #FFC300 55%, #FF8C00 100%);
+            box-shadow: 0 0 18px 8px rgba(255, 195, 0, 0.55);
+            animation: pulse 2.5s ease-in-out infinite;
+        }
+        @keyframes pulse { 50% { box-shadow: 0 0 28px 14px rgba(255, 195, 0, 0.35); } }
+
+        /* Rounded Leaflet popups */
+        .leaflet-popup-content-wrapper { border-radius: 12px; }
+        .leaflet-popup-content { font-family: Inter, system-ui, sans-serif; font-size: 14px; }
+
+        /* ---------- Phones: panel becomes a bottom sheet ---------- */
+        @media (max-width: 640px) {
+            #panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-width: none; max-height: 55vh; }
+            body.panel-hidden #panel { transform: translateY(calc(100% + 24px)); }
+            #hover-readout { display: none; }
+            #logo-container img { max-width: 90px; }
+            .panel-header { padding: 8px 12px; }
+            h1 { font-size: 24px; }
+            .clock .digits { font-size: 22px; }
         }
     </style>
     <meta name="author" content="Chang Li 李畅">
@@ -45,16 +264,79 @@
 </head>
 <body>
 
-<!-- Show local time and UTC time -->
-<div style="padding: 20px; background: #f0f0f0;">
-    Local time: <span id="localTime"></span><br>
-    UTC time: <span id="utcTime"></span>
-</div>
+<!-- NEW: floating side panel that holds the title, clocks and search box -->
+<aside id="panel">
+    <header class="panel-header">
+        <!-- UNL logo -->
+        <div id="logo-container">
+            <img src="image/R_Nebraska_N_2023_name_RGB.png" alt="University of Nebraska-Lincoln">
+        </div>
+        <button class="icon-btn" id="panel-close" title="Hide panel">&#x2039;</button>
+    </header>
 
-<!-- UNL logo -->
-<div id="logo-container">
-    <img src="image/R_Nebraska_N_2023_name_RGB.png" alt="University of Nebraska-Lincoln">
-</div>
+    <div class="panel-body">
+        <p class="kicker">GEOG 155 &middot; Lab 4</p>
+        <h1>Time Zones</h1>
+        <p class="byline">Chang Li @ UNL</p>
+
+        <!-- Show local time and UTC time (same IDs as before: localTime, utcTime) -->
+        <div class="clocks">
+            <div class="clock">
+                <small>Local time</small>
+                <span class="digits" id="localClock">--:--:--</span>
+                <span class="full" id="localTime"></span>
+            </div>
+            <div class="clock utc">
+                <small>UTC time</small>
+                <span class="digits" id="utcClock">--:--:--</span>
+                <span class="full" id="utcTime"></span>
+            </div>
+        </div>
+
+        <!-- Search box (same IDs as before: search-box, search-button) -->
+        <label class="section-label" for="search-box">Find a place</label>
+        <div id="search-container">
+            <input type="text" id="search-box" placeholder="Enter a location">
+            <!-- starts disabled; the map script enables it once the time zone data has loaded -->
+            <button id="search-button" disabled>Search</button>
+        </div>
+
+        <!-- NEW: one-click examples with interesting offsets -->
+        <div class="chips">
+            <button class="chip" data-place="Lincoln, Nebraska">Lincoln, NE</button>
+            <button class="chip" data-place="Kathmandu, Nepal">Kathmandu</button>
+            <button class="chip" data-place="Adelaide, Australia">Adelaide</button>
+            <button class="chip" data-place="St. John's, Newfoundland">St. John's</button>
+            <button class="chip" data-place="Beijing, China">Beijing</button>
+            <button class="chip" data-place="Kiritimati, Kiribati">Kiritimati</button>
+        </div>
+
+        <!-- NEW: result card, filled in after a search -->
+        <div id="result">
+            <div id="result-place"></div>
+            <div class="result-grid">
+                <div><small>Time zone</small><b id="result-zone"></b><span class="sub" id="result-zone-hm"></span></div>
+                <div><small>Clock there</small><b id="result-clock"></b><span class="sub" id="result-date"></span></div>
+            </div>
+            <div id="result-diff"></div>
+        </div>
+
+        <p class="note">
+            <b>Try it:</b> hover over the map to highlight a time zone, click a zone for its offset,
+            and toggle <b>Day / night</b> with the layer button (top right). The &#x2600; marks where
+            the Sun is directly overhead right now.<br><br>
+            <b>Heads-up:</b> these zones are <i>standard time</i> offsets. Daylight Saving Time is not included,
+            so &ldquo;Clock there&rdquo; can be 1 hour off from a real clock during DST.
+        </p>
+    </div>
+</aside>
+
+<!-- NEW: shown only when the panel is hidden -->
+<button id="panel-open">&#x2630; Show panel</button>
+<!-- NEW: floating "you are hovering over..." label -->
+<div id="hover-readout"></div>
+<!-- NEW: small pop-up message used instead of alert() -->
+<div id="toast"></div>
 
 <!-- Time update logic -->
 <script>
@@ -62,20 +344,13 @@
         const now = new Date();
         document.getElementById('utcTime').textContent = now.toUTCString();
         document.getElementById('localTime').textContent = now.toLocaleString();
+        // NEW: big digital clocks (HH:MM:SS, 24-hour)
+        document.getElementById('localClock').textContent = now.toLocaleTimeString([], { hour12: false });
+        document.getElementById('utcClock').textContent = now.toISOString().substring(11, 19);
     }
     setInterval(updateTime, 1000); // Update every 1 second
     updateTime(); // Initial display
 </script>
-
-<h2 style="text-align: center;">GEOG 155 Lab 4 Time Zone</h2>
-
-<p style="text-align: center;">Chang Li @ UNL</p>
-
-<!-- Search box -->
-<div id="search-container">
-    <input type="text" id="search-box" placeholder="Enter a location">
-    <button id="search-button">Search</button>
-</div>
 
 <!-- The map -->
 <div id="map"></div>
@@ -90,12 +365,28 @@
         maxBounds: bounds,
         maxBoundsViscosity: 0.9,
         minZoom: 2
-    });
+    }).setView([20, 0], 2); // NEW: a starting view so the map shows something before the data loads
 
     // Load OpenStreetMap base map
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // CHANGED: saved in a variable (osm) so the layer switcher below can use it
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
+
+    // NEW: extra base maps + a layer switcher (top-right), scale bar, zoom buttons on the right
+    const cartoLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap © CARTO'
+    });
+    const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles © Esri'
+    });
+    const layerControl = L.control.layers(
+        { "OpenStreetMap": osm, "CARTO Light": cartoLight, "Esri Satellite": esriImagery },
+        {},
+        { position: 'topright' }
+    ).addTo(map);
+    L.control.scale({ position: 'bottomright' }).addTo(map);
+    map.zoomControl.setPosition('topright');
 
     let marker; // Store the marker
     let timezoneLayer // Store the time zone layer
@@ -154,6 +445,7 @@
                                 fillOpacity: 0.2
                             });
                             layer.bringToFront(); // Make current time zone on top
+                            showHoverZone(feature.properties.name); // NEW: update the bottom readout
                         },
                         mouseout: function(e) { // Mouse leave turn black
                             layer.setStyle({
@@ -162,6 +454,7 @@
                                 fillColor: "transparent",
                                 fillOpacity: 0
                             });
+                            showHoverZone(null); // NEW: hide the bottom readout
                         }
                     });
 
@@ -172,19 +465,21 @@
                 }
             }).addTo(map);
 
+            layerControl.addOverlay(timezoneLayer, "Time zone boundaries"); // NEW: let students toggle it
+
             // Auto zoom to data boundary
             map.fitBounds(timezoneLayer.getBounds());
             document.getElementById('search-button').disabled = false; // Enable the search button after data is loaded
         })
         .catch(error => {
             console.error('Failed to load time zone data:', error);
-            alert('Cannot load time zone data. ');
+            showToast('Cannot load time zone data. '); // CHANGED: toast instead of alert()
         });
 
     // Search for location
     document.getElementById('search-button').addEventListener('click', function() {
         const location = document.getElementById('search-box').value.trim();
-        if (!location) return alert("Please enter a location.");
+        if (!location) return showToast("Please enter a location."); // CHANGED: toast instead of alert()
 
         // Free geocoding API? https://nominatim.org/
         fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}`, {
@@ -193,7 +488,7 @@
             .then(response => response.json())
             .then(data => {
                 if (data.length === 0) {
-                    alert("Location not found.");
+                    showToast("Location not found."); // CHANGED: toast instead of alert()
                     return;
                 }
 
@@ -213,8 +508,10 @@
                     Location: <b>${displayName}</b><br>
                     Time Zone: <b>GMT${timezone}</b>
                 `).openPopup();
+
+                showResult(displayName, timezone); // NEW: fill in the result card in the side panel
             })
-            .catch(() => alert("Error fetching location data."));
+            .catch(() => showToast("Error fetching location data.")); // CHANGED: toast instead of alert()
     });
 
     // Add keydown event to the search box for Enter key search
@@ -224,6 +521,169 @@
         }
     });
 
+
+    /* ====================================================================
+       NEW: DAY / NIGHT SHADING + SUN MARKER
+       Shows which half of the Earth is in darkness right now.
+       Time zones exist because of this: "noon" happens at different
+       places at different moments as the Earth rotates.
+       ==================================================================== */
+
+    // A separate map "pane" so the night shading sits UNDER the time zone lines
+    map.createPane('night');
+    map.getPane('night').style.zIndex = 350;        // overlayPane (time zones) is 400
+    map.getPane('night').style.pointerEvents = 'none';
+
+    // Where is the Sun directly overhead? (simplified astronomy formulas, accurate to ~1°)
+    function getSubsolarPoint(date) {
+        const rad = Math.PI / 180;
+        const n = date.getTime() / 86400000 + 2440587.5 - 2451545.0;   // days since 1 Jan 2000, 12:00 UTC
+        const meanLong = (280.460 + 0.9856474 * n) % 360;              // Sun's mean longitude
+        const meanAnom = ((357.528 + 0.9856003 * n) % 360) * rad;      // Sun's mean anomaly
+        const eclLong = (meanLong + 1.915 * Math.sin(meanAnom) + 0.020 * Math.sin(2 * meanAnom)) * rad;
+        const tilt = (23.439 - 0.0000004 * n) * rad;                  // tilt of Earth's axis
+        const declination = Math.asin(Math.sin(tilt) * Math.sin(eclLong));                        // Sun's latitude
+        const rightAsc = Math.atan2(Math.cos(tilt) * Math.sin(eclLong), Math.cos(eclLong)) / rad;  // in degrees
+        const gmst = (18.697374558 + 24.06570982441908 * n) % 24;     // Greenwich sidereal time (hours)
+        let lng = (rightAsc - gmst * 15) % 360;
+        if (lng > 180) lng -= 360;
+        if (lng < -180) lng += 360;
+        return { lat: declination / rad, lng: lng };
+    }
+
+    // Build the polygon of the night side: the line where the Sun is exactly on the horizon
+    function getNightPolygon(date) {
+        const rad = Math.PI / 180;
+        const sun = getSubsolarPoint(date);
+        const points = [];
+        for (let lng = -180; lng <= 180; lng++) {
+            const hourAngle = (lng - sun.lng) * rad;
+            const lat = Math.atan(-Math.cos(hourAngle) / Math.tan(sun.lat * rad)) / rad;
+            points.push([lat, lng]);
+        }
+        // Close the shape over the pole that is in darkness
+        const darkPole = sun.lat > 0 ? -90 : 90;
+        points.push([darkPole, 180], [darkPole, -180]);
+        return points;
+    }
+
+    const nightShade = L.polygon(getNightPolygon(new Date()), {
+        pane: 'night',
+        stroke: false,
+        fillColor: '#0B1026',
+        fillOpacity: 0.35,
+        interactive: false
+    });
+    const sunMarker = L.marker(getSubsolarPoint(new Date()), {
+        icon: L.divIcon({ className: 'sun-icon', html: '<div></div>', iconSize: [26, 26] })
+    }).bindPopup('<b>&#x2600; Subsolar point</b><br>The Sun is directly overhead here right now.<br>It is solar noon along this longitude.');
+
+    const dayNightLayer = L.layerGroup([nightShade, sunMarker]).addTo(map);
+    layerControl.addOverlay(dayNightLayer, "Day / night");
+
+    // Move the shading and the sun once a minute
+    setInterval(() => {
+        const now = new Date();
+        nightShade.setLatLngs(getNightPolygon(now));
+        sunMarker.setLatLng(getSubsolarPoint(now));
+    }, 60000);
+
+
+    /* ====================================================================
+       NEW: UI HELPER FUNCTIONS (result card, hover readout, toast, panel)
+       ==================================================================== */
+
+    // "+5.75" -> 5.75. Returns NaN if the zone name is not a number.
+    function zoneOffset(name) {
+        return parseFloat(name);
+    }
+
+    // 5.75 -> "UTC+05:45" (shows why decimal offsets like .75 mean 45 minutes)
+    function offsetToHHMM(offset) {
+        const sign = offset < 0 ? '−' : '+';
+        const totalMin = Math.round(Math.abs(offset) * 60);
+        const hh = String(Math.floor(totalMin / 60)).padStart(2, '0');
+        const mm = String(totalMin % 60).padStart(2, '0');
+        return `UTC${sign}${hh}:${mm}`;
+    }
+
+    // The wall-clock time in a zone = UTC time + the zone's offset
+    function timeInZone(offset, now) {
+        return new Date(now.getTime() + offset * 3600000); // read it with getUTC...() methods
+    }
+
+    // Hovering over a zone shows its offset and current time at the bottom of the map
+    function showHoverZone(name) {
+        const box = document.getElementById('hover-readout');
+        const offset = zoneOffset(name);
+        if (name === null || Number.isNaN(offset)) { box.classList.remove('show'); return; }
+        const there = timeInZone(offset, new Date()).toISOString().substring(11, 16);
+        box.innerHTML = `Time zone <b>GMT${name}</b> &nbsp;·&nbsp; clock there <b>${there}</b>`;
+        box.classList.add('show');
+    }
+
+    // The zone of the most recent search, so the result card clock can keep ticking
+    let resultOffset = null;
+
+    // Fill in the result card after a search
+    function showResult(placeName, zoneName) {
+        const offset = zoneOffset(zoneName);
+        document.getElementById('result-place').textContent = placeName;
+        document.getElementById('result-zone').textContent = Number.isNaN(offset) ? '?' : `GMT${zoneName}`;
+        document.getElementById('result-zone-hm').textContent = Number.isNaN(offset) ? 'Zone not found' : offsetToHHMM(offset);
+        resultOffset = Number.isNaN(offset) ? null : offset;
+        updateResultClock();
+        document.getElementById('result').classList.remove('show');
+        void document.getElementById('result').offsetWidth; // restart the pop-in animation
+        document.getElementById('result').classList.add('show');
+    }
+
+    // Update "Clock there" and how far ahead/behind the student it is
+    function updateResultClock() {
+        if (resultOffset === null) {
+            document.getElementById('result-clock').textContent = '--:--';
+            document.getElementById('result-date').textContent = '';
+            document.getElementById('result-diff').textContent = '';
+            return;
+        }
+        const now = new Date();
+        const there = timeInZone(resultOffset, now);
+        document.getElementById('result-clock').textContent = there.toISOString().substring(11, 19);
+        document.getElementById('result-date').textContent =
+            there.toLocaleDateString([], { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+
+        // Your computer's offset from UTC (getTimezoneOffset() is in minutes and has the opposite sign)
+        const myOffset = -now.getTimezoneOffset() / 60;
+        const diff = resultOffset - myOffset;
+        const h = Math.floor(Math.abs(diff));
+        const m = Math.round((Math.abs(diff) - h) * 60);
+        const amount = `${h} h${m ? ' ' + m + ' min' : ''}`;
+        document.getElementById('result-diff').textContent =
+            diff === 0 ? 'Same clock time as you' : `${amount} ${diff > 0 ? 'ahead of' : 'behind'} your local time`;
+    }
+    setInterval(updateResultClock, 1000);
+
+    // Small message at the top of the screen (disappears after 3 seconds)
+    let toastTimer;
+    function showToast(message) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // Example chips: put the place name in the search box and press Search
+    document.querySelectorAll('.chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            document.getElementById('search-box').value = chip.dataset.place;
+            document.getElementById('search-button').click();
+        });
+    });
+
+    // Hide / show the side panel
+    document.getElementById('panel-close').addEventListener('click', () => document.body.classList.add('panel-hidden'));
+    document.getElementById('panel-open').addEventListener('click', () => document.body.classList.remove('panel-hidden'));
 </script>
 
 </body>

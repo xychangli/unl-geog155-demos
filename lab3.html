@@ -2,17 +2,285 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- NEW: makes the page scale properly on phones/tablets -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="image/Nebraska_N_RGB.png" type="image/png">
     <title>GEOG 155 Lab 3 GIS and VGI Demo</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- NEW: web fonts (Inter for text, JetBrains Mono for numbers) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <style>
-        #map { height: 800px; margin: 20px; border: 2px solid white; }
-        #logo-container { position: absolute; top: 20px; left: 30px; z-index: 1000; }
-        #logo-container img { max-width: 120px; height: auto; display: block; }
-        .popup-photo { display:block; max-width:280px; max-height:200px; margin-top:6px; border:1px solid #ddd; }
-        .popup-loading { color:#666; font-size:0.9em; margin-top:6px; display:block; }
+        /* ================================================================
+           NEW UI STYLES
+           Everything below only changes how the page LOOKS.
+           The map logic in the <script> at the bottom is (almost) unchanged.
+           ================================================================ */
+
+        /* Color palette (UNL scarlet + cream). Change these to re-theme the page. */
+        :root {
+            --scarlet: #D00000;
+            --scarlet-dark: #9E0000;
+            --cream: #FEFDFA;
+            --ink: #1D1D1F;
+            --muted: #6B6B70;
+            --line: rgba(0, 0, 0, 0.08);
+            --glass: rgba(254, 253, 250, 0.92);
+            --shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+            --radius: 16px;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            height: 100%;
+            font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+            color: var(--ink);
+            background: #E9E6DF;
+        }
+
+        /* The map now fills the whole browser window (it used to be a fixed 800px box) */
+        #map { position: fixed; inset: 0; height: 100%; z-index: 0; }
+
+        /* ---------- Floating side panel ---------- */
+        #panel {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            bottom: 16px;
+            width: 360px;
+            max-width: calc(100vw - 32px);
+            display: flex;
+            flex-direction: column;
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            z-index: 1000;                 /* above the map */
+            transition: transform 0.35s ease, opacity 0.35s ease;
+        }
+        /* When the panel is hidden (for a clean screenshot) slide it off-screen */
+        body.panel-hidden #panel { transform: translateX(calc(-100% - 24px)); opacity: 0; pointer-events: none; }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            border-bottom: 4px solid var(--scarlet);
+            background: #fff;
+        }
+        #logo-container img { max-width: 150px; height: auto; display: block; }
+
+        .icon-btn {
+            border: 1px solid var(--line);
+            background: #fff;
+            width: 34px; height: 34px;
+            border-radius: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            color: var(--muted);
+        }
+        .icon-btn:hover { color: var(--scarlet); border-color: var(--scarlet); }
+
+        .panel-body { padding: 18px 18px 20px; overflow-y: auto; flex: 1; }
+
+        .kicker {
+            margin: 0;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--scarlet);
+        }
+        h1 { margin: 4px 0 6px; font-size: 28px; line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; }
+        h1 span { color: var(--scarlet); }
+        .subtitle { margin: 0 0 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+        .byline { margin: 0 0 16px; font-size: 13px; font-weight: 600; }
+
+        /* Big red "call to action" button that opens the survey */
+        .cta {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--scarlet), var(--scarlet-dark));
+            color: #fff;
+            font-weight: 700;
+            text-decoration: none;
+            box-shadow: 0 6px 16px rgba(208, 0, 0, 0.35);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .cta:hover { transform: translateY(-1px); box-shadow: 0 10px 22px rgba(208, 0, 0, 0.4); }
+
+        /* Numbered step list with red circles */
+        .steps { list-style: none; counter-reset: step; padding: 0; margin: 16px 0; }
+        .steps li {
+            counter-increment: step;
+            position: relative;
+            padding: 0 0 12px 38px;
+            font-size: 14px;
+            line-height: 1.45;
+        }
+        .steps li::before {
+            content: counter(step);
+            position: absolute;
+            left: 0; top: -1px;
+            width: 26px; height: 26px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid var(--scarlet);
+            color: var(--scarlet);
+            font-weight: 800;
+            font-size: 13px;
+            display: grid;
+            place-items: center;
+        }
+        .steps a { color: var(--scarlet); font-weight: 600; word-break: break-all; }
+        .tip { font-size: 12px; color: var(--muted); }
+
+        /* Three small "stat tiles" */
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 12px; }
+        .stat { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 8px; text-align: center; }
+        .stat span { display: block; font-family: "JetBrains Mono", monospace; font-size: 22px; font-weight: 700; color: var(--scarlet); }
+        .stat small { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+        .actions { display: flex; gap: 8px; margin-bottom: 16px; }
+        .btn {
+            flex: 1;
+            padding: 9px 10px;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            background: #fff;
+            font: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn:hover { border-color: var(--scarlet); color: var(--scarlet); }
+        .btn:disabled { opacity: 0.5; cursor: progress; }
+
+        /* "Find your POI" search + result list */
+        .find-label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+        #find-box {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            font: inherit;
+            font-size: 14px;
+            background: #fff;
+        }
+        #find-box:focus { outline: 2px solid var(--scarlet); outline-offset: 1px; }
+        #poi-list { list-style: none; padding: 0; margin: 8px 0 0; }
+        #poi-list li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        #poi-list li:hover { background: rgba(208, 0, 0, 0.07); }
+        .avatar {
+            flex: none;
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: var(--scarlet);
+            color: #fff;
+            font-weight: 700;
+            font-size: 13px;
+            display: grid;
+            place-items: center;
+        }
+        .poi-meta { min-width: 0; }
+        .poi-meta b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .poi-meta small { color: var(--muted); font-size: 12px; }
+        .empty { color: var(--muted); font-size: 13px; padding: 8px 2px; }
+
+        /* Button that brings the panel back after hiding it */
+        #panel-open {
+            position: fixed;
+            top: 16px; left: 16px;
+            z-index: 1000;
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: none;
+            background: var(--scarlet);
+            color: #fff;
+            font: inherit;
+            font-weight: 700;
+            box-shadow: var(--shadow);
+            cursor: pointer;
+            display: none;
+        }
+        body.panel-hidden #panel-open { display: block; }
+
+        /* Loading pill shown while we download survey results */
+        #loading {
+            position: fixed;
+            top: 20px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 1100;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: var(--ink);
+            color: #fff;
+            font-size: 14px;
+            box-shadow: var(--shadow);
+        }
+        body.is-loading #loading { display: flex; }
+        .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ---------- Custom map pin (a red drop with the rating number inside) ---------- */
+        .vgi-pin { background: none; border: none; }
+        .vgi-pin .pin {
+            width: 30px; height: 30px;
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            background: var(--scarlet);
+            border: 2px solid #fff;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+            display: grid;
+            place-items: center;
+            transition: transform 0.15s ease;
+        }
+        .vgi-pin .pin span { transform: rotate(45deg); color: #fff; font-weight: 800; font-size: 13px; }
+        .vgi-pin:hover .pin { transform: rotate(-45deg) scale(1.15); }
+
+        /* ---------- Popup card ---------- */
+        .vgi-popup .leaflet-popup-content-wrapper { border-radius: 14px; box-shadow: var(--shadow); padding: 0; overflow: hidden; }
+        .vgi-popup .leaflet-popup-content { margin: 0; font-family: Inter, system-ui, sans-serif; min-width: 240px; }
+        .poi-card-head { background: var(--scarlet); color: #fff; padding: 12px 36px 12px 14px; }
+        .poi-card-head .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.85; }
+        .poi-card-head .name { font-size: 17px; font-weight: 800; }
+        .poi-card-body { padding: 10px 14px 14px; font-size: 14px; }
+        .poi-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+        .poi-row b { font-weight: 600; color: var(--muted); }
+        .stars { color: #E6A700; letter-spacing: 1px; }
+        .poi-review { margin: 8px 0 0; font-style: italic; line-height: 1.4; }
+        .vgi-popup a.leaflet-popup-close-button { color: #fff; top: 6px; right: 6px; }
+        .popup-photo { display:block; max-width:280px; max-height:200px; margin-top:6px; border-radius: 10px; border:1px solid #ddd; }
+        .popup-loading { color:#666; font-size:0.9em; margin-top:8px; display:block; }
         .popup-link { display:block; margin-top:6px; font-size:0.9em; }
+
+        /* ---------- Phones: panel becomes a bottom sheet ---------- */
+        @media (max-width: 640px) {
+            #panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-width: none; max-height: 55vh; }
+            body.panel-hidden #panel { transform: translateY(calc(100% + 24px)); }
+            #logo-container img { max-width: 90px; }
+            .panel-header { padding: 8px 12px; }
+            h1 { font-size: 24px; }
+        }
     </style>
     <meta name="author" content="Chang Li 李畅">
     <meta name="date" content="2025-02-18">
@@ -20,20 +288,59 @@
 </head>
 <body>
 
-<div id="logo-container">
-    <img src="image/R_Nebraska_N_2023_name_RGB.png" alt="University of Nebraska-Lincoln">
-</div>
+<!-- NEW: floating side panel that replaces the old header text -->
+<aside id="panel">
+    <header class="panel-header">
+        <div id="logo-container">
+            <img src="image/R_Nebraska_N_2023_name_RGB.png" alt="University of Nebraska-Lincoln">
+        </div>
+        <!-- Hides the panel so students can take a clean screenshot -->
+        <button class="icon-btn" id="panel-close" title="Hide panel (for a clean screenshot)">&#x2039;</button>
+    </header>
 
-<h2 style="text-align: center;">GEOG 155 Lab 3 GIS and VGI</h2>
-<p style="text-align: center;">Chang Li @ UNL</p>
-<p style="text-align: center;">
-    <span style="display: inline-block; text-align: left;">
-        Go to <a href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">https://arcg.is/1WSeza</a> to participate.
-        After submitting the survey, refresh this page.<br>
-        Take a screenshot of your POI with the popup showing your name, section, rating, and review.<br>
-        Submit the screenshot to Canvas.
-    </span>
-</p>
+    <div class="panel-body">
+        <p class="kicker">GEOG 155 &middot; Lab 3</p>
+        <h1>GIS &amp; <span>VGI</span></h1>
+        <p class="subtitle">Volunteered Geographic Information &mdash; a map made by you and your classmates.</p>
+        <p class="byline">Chang Li @ UNL</p>
+
+        <a class="cta" href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">
+            &#x1F4CD; Add your POI in Survey123 &#x2197;
+        </a>
+
+        <!-- Same instructions as before, just formatted as numbered steps -->
+        <ol class="steps">
+            <li>Go to <a href="https://arcg.is/1WSeza" target="_blank" rel="noopener noreferrer">https://arcg.is/1WSeza</a> to participate.</li>
+            <li>After submitting the survey, click <b>Refresh</b> below (or refresh this page).</li>
+            <li>Find your POI and click it. Take a screenshot of your POI with the popup showing your <b>name, section, rating, and review</b>.<br>
+                <span class="tip">Tip: click &#x2039; at the top to hide this panel before taking the screenshot.</span></li>
+            <li>Submit the screenshot to Canvas.</li>
+        </ol>
+
+        <!-- Live numbers calculated from the survey results -->
+        <div class="stats">
+            <div class="stat"><span id="stat-count">&ndash;</span><small>POIs</small></div>
+            <div class="stat"><span id="stat-avg">&ndash;</span><small>Avg rating</small></div>
+            <div class="stat"><span id="stat-sections">&ndash;</span><small>Sections</small></div>
+        </div>
+
+        <div class="actions">
+            <button class="btn" id="refresh-btn">&#x27F3; Refresh</button>
+            <button class="btn" id="showall-btn">&#x2922; Show all POIs</button>
+        </div>
+
+        <!-- Type a name to filter the list, click a name to fly to that POI -->
+        <label class="find-label" for="find-box">Find your POI</label>
+        <input id="find-box" type="search" placeholder="Type your name&hellip;" autocomplete="off">
+        <ul id="poi-list"><li class="empty">Loading submissions&hellip;</li></ul>
+    </div>
+</aside>
+
+<!-- NEW: shown only when the panel is hidden -->
+<button id="panel-open">&#x2630; Show panel</button>
+
+<!-- NEW: loading indicator -->
+<div id="loading"><div class="spinner"></div>Loading VGI submissions&hellip;</div>
 
 <div id="map"></div>
 
@@ -48,9 +355,33 @@
         minZoom: 2
     }).setView(initialCenter, 12);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // CHANGED: saved the base map in a variable (osm) so the layer switcher below can use it
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap'
     }).addTo(map);
+
+    // NEW: two extra base maps students can switch to (top-right layer button)
+    const cartoVoyager = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap © CARTO'
+    });
+    const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles © Esri'
+    });
+
+    // NEW: group that holds all survey markers, so "Refresh" can clear and redraw them
+    const surveyLayer = L.layerGroup().addTo(map);
+
+    // NEW: map controls — layer switcher, scale bar, and zoom buttons moved to the right
+    L.control.layers(
+        { "OpenStreetMap": osm, "CARTO Voyager": cartoVoyager, "Esri Satellite": esriImagery },
+        { "Survey POIs": surveyLayer },
+        { position: 'topright' }
+    ).addTo(map);
+    L.control.scale({ position: 'bottomright' }).addTo(map);
+    map.zoomControl.setPosition('topright');
+
+    // NEW: every submission is remembered here ({ marker, attr }) for the stats and the "Find your POI" list
+    let submissions = [];
 
     // Feature layer base URL
     const featureLayerUrl = "https://services8.arcgis.com/jzdN07B7ZhRTxuzU/arcgis/rest/services/survey123_e28761d4a7bc44d98d45bf4925cc7238_results/FeatureServer/0";
@@ -59,33 +390,43 @@
     const ATTACHMENT_TOKEN = null; // or 'your_token_here'
 
     async function fetchSurveyData() {
+        setLoading(true); // NEW: show the loading pill
         const outFields = "OBJECTID,student_name,student_section,poi_rating,poi_review";
         const queryUrl = `${featureLayerUrl}/query?where=1=1&outFields=${encodeURIComponent(outFields)}&returnGeometry=true&f=json`;
 
         try {
             const resp = await fetch(queryUrl);
             const data = await resp.json();
-            if (data.error) { console.error("Feature query error:", data.error); return; }
+            if (data.error) { console.error("Feature query error:", data.error); showListMessage("Could not load survey results."); return; }
             data.features.forEach(feature => {
                 const lat = feature.geometry?.y;
                 const lng = feature.geometry?.x;
                 const attr = feature.attributes || {};
                 if (typeof lat !== 'number' || typeof lng !== 'number') return;
 
-                const marker = L.marker([lat, lng]).addTo(map);
+                // CHANGED: custom red pin icon, and add to surveyLayer (instead of directly to map)
+                const marker = L.marker([lat, lng], { icon: makePinIcon(attr.poi_rating) }).addTo(surveyLayer);
+                submissions.push({ marker, attr }); // NEW: remember it for the side panel
 
                 // Ensure we request OBJECTID from attributes
                 const objectId = attr.OBJECTID || attr.objectid || attr.ObjectID || attr.FID;
+                // CHANGED: popup is now styled as a card. Same four fields as before.
+                // escapeHtml() stops a student's text (e.g. "<b>") from breaking the popup.
                 const basePopup = `
-                    <div>
-                      <b>Student Name:</b> ${attr.student_name || 'N/A'}<br>
-                      <b>Lab Section:</b> ${attr.student_section || 'N/A'}<br>
-                      <b>Rating:</b> ${attr.poi_rating || 'N/A'}<br>
-                      <b>Review:</b> ${attr.poi_review || 'N/A'}<br>
-                      <span class="popup-loading">Loading image...</span>
+                    <div class="poi-card">
+                      <div class="poi-card-head">
+                        <div class="label">Student Name</div>
+                        <div class="name">${escapeHtml(attr.student_name || 'N/A')}</div>
+                      </div>
+                      <div class="poi-card-body">
+                        <div class="poi-row"><b>Lab Section:</b> <span>${escapeHtml(attr.student_section || 'N/A')}</span></div>
+                        <div class="poi-row"><b>Rating:</b> <span>${renderStars(attr.poi_rating)}</span></div>
+                        <div class="poi-review"><b>Review:</b> ${escapeHtml(attr.poi_review || 'N/A')}</div>
+                        <span class="popup-loading">Loading image...</span>
+                      </div>
                     </div>
                 `;
-                marker.bindPopup(basePopup);
+                marker.bindPopup(basePopup, { className: 'vgi-popup', maxWidth: 320 }); // CHANGED: added popup styling options
 
                 // Fetch attachments for this objectId and show first image attachment if present
                 (async () => {
@@ -153,12 +494,146 @@
 
             });
 
+            // NEW: update the numbers and the name list in the side panel
+            updateStats();
+            renderPoiList();
+
         } catch (err) {
             console.error("Failed to fetch features:", err);
+            showListMessage("Could not load survey results. Check your connection and click Refresh.");
+        } finally {
+            setLoading(false); // NEW: hide the loading pill whether it worked or not
         }
     }
 
     fetchSurveyData();
+
+
+    /* ====================================================================
+       NEW: UI HELPER FUNCTIONS
+       These only power the side panel, pins and popups.
+       You don't need them to understand how the map gets its data.
+       ==================================================================== */
+
+    // Turn special characters into safe text so student input can't inject HTML
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // Survey123 ratings are usually 1–5. Returns a number, or null if it isn't one.
+    function ratingNumber(rating) {
+        const n = parseFloat(rating);
+        return Number.isFinite(n) ? Math.max(0, Math.min(5, Math.round(n))) : null;
+    }
+
+    // Show a rating as stars, e.g. 4 -> ★★★★☆ 4/5 (falls back to the raw text)
+    function renderStars(rating) {
+        const n = ratingNumber(rating);
+        if (n === null) return escapeHtml(rating || 'N/A');
+        return `<span class="stars">${'★'.repeat(n)}${'☆'.repeat(5 - n)}</span> ${n}/5`;
+    }
+
+    // Build the red drop-shaped pin with the rating number inside it
+    function makePinIcon(rating) {
+        const n = ratingNumber(rating);
+        return L.divIcon({
+            className: 'vgi-pin',
+            html: `<div class="pin"><span>${n === null ? '•' : n}</span></div>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 36],   // the pin's tip sits on the exact location
+            popupAnchor: [0, -36]   // popups open just above the pin
+        });
+    }
+
+    // First letters of a name, e.g. "Chang Li" -> "CL"
+    function initials(name) {
+        return String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+    }
+
+    // Fill in the three stat tiles
+    function updateStats() {
+        const ratings = submissions.map(s => ratingNumber(s.attr.poi_rating)).filter(n => n !== null);
+        const sections = new Set(submissions.map(s => s.attr.student_section).filter(Boolean));
+        document.getElementById('stat-count').textContent = submissions.length;
+        document.getElementById('stat-avg').textContent =
+            ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : '–';
+        document.getElementById('stat-sections').textContent = sections.size || '–';
+    }
+
+    // Draw the clickable list of names (newest first), filtered by the search box
+    function renderPoiList() {
+        const list = document.getElementById('poi-list');
+        const query = document.getElementById('find-box').value.trim().toLowerCase();
+        const matches = submissions
+            .filter(s => String(s.attr.student_name || '').toLowerCase().includes(query))
+            .sort((a, b) => (b.attr.OBJECTID || 0) - (a.attr.OBJECTID || 0));
+
+        list.innerHTML = '';
+        if (matches.length === 0) {
+            showListMessage(submissions.length ? 'No names match your search.' : 'No submissions yet — be the first!');
+            return;
+        }
+        matches.forEach(({ marker, attr }) => {
+            const li = document.createElement('li');
+            const n = ratingNumber(attr.poi_rating);
+            li.innerHTML = `<div class="avatar"></div><div class="poi-meta"><b></b><small></small></div>`;
+            // textContent (not innerHTML) keeps student text safe
+            li.querySelector('.avatar').textContent = initials(attr.student_name);
+            li.querySelector('b').textContent = attr.student_name || 'N/A';
+            li.querySelector('small').textContent =
+                `Section ${attr.student_section || 'N/A'}` + (n === null ? '' : ` · ${'★'.repeat(n)}`);
+            // Clicking a name flies the map to that POI and opens its popup
+            li.addEventListener('click', () => {
+                map.flyTo(marker.getLatLng(), 17, { duration: 1.2 });
+                map.once('moveend', () => marker.openPopup());
+            });
+            list.appendChild(li);
+        });
+    }
+
+    // Replace the list with a single grey message
+    function showListMessage(text) {
+        const list = document.getElementById('poi-list');
+        list.innerHTML = '';
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = text;
+        list.appendChild(li);
+    }
+
+    // Show/hide the loading pill and disable the Refresh button while loading
+    function setLoading(isLoading) {
+        document.body.classList.toggle('is-loading', isLoading);
+        document.getElementById('refresh-btn').disabled = isLoading;
+    }
+
+    // ---- Button + search box wiring ----
+
+    // Refresh: remove old markers and download the survey results again (no page reload needed)
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+        surveyLayer.clearLayers();
+        submissions = [];
+        fetchSurveyData();
+    });
+
+    // Show all: zoom out so every POI fits on screen
+    document.getElementById('showall-btn').addEventListener('click', () => {
+        if (submissions.length === 0) return;
+        const allPoints = L.latLngBounds(submissions.map(s => s.marker.getLatLng()));
+        map.flyToBounds(allPoints, { padding: [60, 60], maxZoom: 15 });
+    });
+
+    // Re-filter the list every time the student types
+    document.getElementById('find-box').addEventListener('input', renderPoiList);
+
+    // Hide / show the side panel
+    document.getElementById('panel-close').addEventListener('click', () => document.body.classList.add('panel-hidden'));
+    document.getElementById('panel-open').addEventListener('click', () => document.body.classList.remove('panel-hidden'));
 </script>
 
 </body>
