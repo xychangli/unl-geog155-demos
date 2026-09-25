@@ -426,7 +426,8 @@
                       </div>
                     </div>
                 `;
-                marker.bindPopup(basePopup, { className: 'vgi-popup', maxWidth: 320 }); // CHANGED: added popup styling options
+                // CHANGED: added popup styling options. autoPan: false because we center the popup ourselves (see centerPopup below)
+                marker.bindPopup(basePopup, { className: 'vgi-popup', maxWidth: 320, autoPan: false });
 
                 // Fetch attachments for this objectId and show first image attachment if present
                 (async () => {
@@ -634,6 +635,60 @@
     // Hide / show the side panel
     document.getElementById('panel-close').addEventListener('click', () => document.body.classList.add('panel-hidden'));
     document.getElementById('panel-open').addEventListener('click', () => document.body.classList.remove('panel-hidden'));
+
+
+    /* ====================================================================
+       NEW: CENTER THE POPUP ON SCREEN
+       Leaflet normally pans the map only until the popup is *barely* inside
+       the window, so POIs near the edge (or behind the side panel) opened
+       cut-off popups. Instead, we pan the map so the popup sits in the
+       middle of the part of the map you can actually see.
+       ==================================================================== */
+
+    // Same breakpoint as the phone CSS (@media max-width: 640px)
+    const phoneScreen = window.matchMedia('(max-width: 640px)');
+
+    // The rectangle of the screen where the map is visible (not covered by the side panel)
+    function visibleMapArea() {
+        const area = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+        if (!document.body.classList.contains('panel-hidden')) {
+            const panel = document.getElementById('panel').getBoundingClientRect();
+            if (phoneScreen.matches) area.bottom = panel.top;  // phones: panel is a bottom sheet
+            else area.left = panel.right;                      // computers: panel is on the left
+        }
+        return area;
+    }
+
+    // Pan the map by the distance between the popup's center and the visible area's center
+    function centerPopup(popup) {
+        const el = popup.getElement();
+        if (!el || !popup.isOpen()) return;
+        const box = el.getBoundingClientRect();
+        const area = visibleMapArea();
+        const dx = (box.left + box.width / 2) - (area.left + area.right) / 2;
+        const dy = (box.top + box.height / 2) - (area.top + area.bottom) / 2;
+        map.panBy([dx, dy]);
+
+        // If a photo is still loading, the popup will grow taller — center again once it has loaded
+        el.querySelectorAll('img').forEach(img => {
+            if (!img.complete) img.addEventListener('load', () => centerPopup(popup), { once: true });
+        });
+    }
+
+    // When the photo arrives, the popup content changes size.
+    // Leaflet fires 'contentupdate' *before* it re-positions the popup, so wait one frame.
+    function recenterAfterUpdate(e) {
+        requestAnimationFrame(() => centerPopup(e.target));
+    }
+
+    // Runs every time any survey popup opens (tap/click on a pin, or a name in the list)
+    map.on('popupopen', e => {
+        if (e.popup.options.className !== 'vgi-popup') return;
+        // Phones: slide the panel away so the popup gets the whole screen for the screenshot
+        if (phoneScreen.matches) document.body.classList.add('panel-hidden');
+        centerPopup(e.popup);
+        e.popup.on('contentupdate', recenterAfterUpdate); // Leaflet ignores duplicate listeners
+    });
 </script>
 
 </body>
